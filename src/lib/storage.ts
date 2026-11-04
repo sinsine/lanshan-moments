@@ -57,12 +57,12 @@ export function saveApiKey(key: string): void {
 }
 
 export function loadGithubToken(): string {
-  return sessionStorage.getItem(GITHUB_TOKEN) ?? ''
+  return localStorage.getItem(GITHUB_TOKEN) ?? ''
 }
 
 export function saveGithubToken(token: string): void {
-  if (token) sessionStorage.setItem(GITHUB_TOKEN, token)
-  else sessionStorage.removeItem(GITHUB_TOKEN)
+  if (token) localStorage.setItem(GITHUB_TOKEN, token)
+  else localStorage.removeItem(GITHUB_TOKEN)
 }
 
 export function loadEvents(): ScheduleEvent[] | null {

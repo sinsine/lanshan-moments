@@ -20,6 +20,8 @@ export type IconName =
   | 'download'
   | 'x'
   | 'plus'
+  | 'minus'
+  | 'square'
   | 'pin'
   | 'clock'
   | 'alert'
@@ -105,6 +107,8 @@ const paths: Record<IconName, ReactNode> = {
   download: <path d="M12 3.5v12M7 10.5l5 5 5-5M4 20.5h16" />,
   x: <path d="M5.5 5.5l13 13M18.5 5.5l-13 13" />,
   plus: <path d="M12 4.5v15M4.5 12h15" />,
+  minus: <path d="M4.5 12h15" />,
+  square: <rect x="5" y="5" width="14" height="14" rx="1.2" />,
   pin: (
     <>
       <path d="M12 21s6.5-5.4 6.5-10.5a6.5 6.5 0 10-13 0C5.5 15.6 12 21 12 21z" />

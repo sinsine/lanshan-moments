@@ -39,7 +39,7 @@ const COPY = {
       '开发提示：尚未配置 VITE_GITHUB_CLIENT_ID，设备码登录暂不可用。请在环境变量中填入 OAuth App 的 Client ID，或改用下面的访问令牌。',
     patTitle: '使用访问令牌',
     patBody: '用 Fine-grained token 连接，适合 Client ID 还没有配置的时候。',
-    security: '两种方式都不会把令牌写进仓库，令牌只保留在本次会话。',
+    security: '两种方式都不会把令牌写进仓库，令牌保存在本机，更新应用后仍会保留。',
   },
   device: {
     codeLabel: '设备码',
@@ -70,7 +70,7 @@ const COPY = {
     verifying: '正在验证…',
     missing: '请先粘贴访问令牌。',
     security:
-      '令牌只保存在本次浏览器会话（sessionStorage），关闭标签页即清除；不要把它写进代码或分享给他人。',
+      '令牌保存在本机 localStorage，关闭应用后仍保留；不要把它写进代码或分享给他人。',
   },
   repos: {
     connected: '已连接',

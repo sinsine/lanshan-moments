@@ -83,7 +83,7 @@
 
 - 应用只申请 `repo read:user`，用于读取/创建私有仓库。
 - 客户端只保存公开 Client ID；**没有 client secret**。
-- Token 在网页端只放 `sessionStorage`；生产版会迁移系统钥匙串。
+- Token 在 v0.3.1 起按用户要求保存在本机 `localStorage`；生产版会迁移系统钥匙串。
 - 如果以后做托管代理，才需要服务端保存 secret；当前版本不需要。
 
 ## 7. 我需要你回什么

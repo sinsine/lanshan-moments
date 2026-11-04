@@ -302,3 +302,71 @@
 .update-dialog__body strong { color: var(--text-strong); font-weight: 500; }
 .update-dialog__hint { margin-top: 8px; color: var(--faint); }
 .update-dialog__foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+
+.sync-advanced {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--field-bg);
+}
+
+.sync-advanced > summary {
+  cursor: pointer;
+  color: var(--ink-1);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.sync-advanced[open] > summary {
+  margin-bottom: 12px;
+  color: var(--ink-0);
+}
+
+.desktop-shell .topnav {
+  --wails-draggable: drag;
+}
+
+.topnav button,
+.topnav-menu,
+.menu-panel,
+.topnav-window-controls {
+  --wails-draggable: no-drag;
+}
+
+.topnav-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 5px;
+  padding-left: 7px;
+  border-left: 1px solid var(--line);
+}
+
+.topnav-window-control {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--faint);
+}
+
+.topnav-window-control:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-strong);
+}
+
+.topnav-window-control--close:hover {
+  background: #b33a3a;
+  color: #fff;
+}
+
+.window-frame--tiled {
+  border-radius: 0;
+}
+
+.window-frame--floating {
+  border-radius: var(--radius-l);
+}

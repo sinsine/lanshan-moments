@@ -42,6 +42,10 @@ export interface TopNavProps {
   onOpenSyncSettings: () => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
+  nativeWindow?: boolean
+  onMinimize?: () => void
+  onMaximize?: () => void
+  onCloseWindow?: () => void
 }
 
 const COPY = {
@@ -415,6 +419,10 @@ export function TopNav({
   onOpenSyncSettings,
   theme,
   onToggleTheme,
+  nativeWindow = false,
+  onMinimize,
+  onMaximize,
+  onCloseWindow,
 }: TopNavProps) {
   const [openMenu, setOpenMenu] = useState<MenuId | null>(null)
   const baseId = useId()
@@ -757,6 +765,38 @@ export function TopNav({
         >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
         </button>
+
+        {nativeWindow && (
+          <div className="topnav-window-controls">
+            <button
+              className="topnav-window-control"
+              type="button"
+              onClick={onMinimize}
+              aria-label="最小化"
+              title="最小化"
+            >
+              <Icon name="minus" size={13} />
+            </button>
+            <button
+              className="topnav-window-control"
+              type="button"
+              onClick={onMaximize}
+              aria-label="最大化 / 还原"
+              title="最大化 / 还原"
+            >
+              <Icon name="square" size={11} />
+            </button>
+            <button
+              className="topnav-window-control topnav-window-control--close"
+              type="button"
+              onClick={onCloseWindow}
+              aria-label="关闭"
+              title="关闭"
+            >
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   )

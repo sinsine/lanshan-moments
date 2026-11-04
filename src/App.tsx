@@ -20,7 +20,6 @@ import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
 import {
   copyText,
-  createSeedEvents,
   downloadText,
   draftsToEvents,
   fileToAttachedImage,
@@ -126,7 +125,10 @@ export default function App() {
   const [deviceId] = useState(getDeviceId)
   const [events, setEvents] = useState<ScheduleEvent[]>(() => {
     const stored = loadEvents()
-    return stored ?? createSeedEvents(new Date(), getDeviceId())
+    if (!stored) return []
+    // Earlier builds seeded fictional demo events. Do not keep showing them as
+    // if they were the user's own schedule; keep every non-seed event intact.
+    return stored.filter((event) => !event.id.startsWith('evt_seed_'))
   })
   const [settings, setSettings] = useState<AppSettings>(loadSettings)
   const [apiKey, setApiKey] = useState(loadApiKey)
@@ -147,6 +149,7 @@ export default function App() {
     settings: 5,
   })
   const [, setZCounter] = useState(6)
+  const [layoutEpoch, setLayoutEpoch] = useState(0)
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -208,6 +211,12 @@ export default function App() {
       cancelled = true
     }
   }, [liveEvents, notificationsOn])
+
+  useEffect(() => {
+    const onResize = () => setLayoutEpoch((epoch) => epoch + 1)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     saveEvents(events)
@@ -537,14 +546,23 @@ export default function App() {
     }
   }
 
-  const handleExit = () => {
-    const bridge = (
-      window as unknown as {
-        go?: { main?: { App?: { Quit?: () => void } } }
+  const nativeBridge = (
+    window as unknown as {
+      go?: {
+        main?: {
+          App?: {
+            Quit?: () => void
+            WindowMinimise?: () => void
+            WindowToggleMaximise?: () => void
+          }
+        }
       }
-    ).go?.main?.App
-    if (bridge?.Quit) {
-      bridge.Quit()
+    }
+  ).go?.main?.App
+
+  const handleExit = () => {
+    if (nativeBridge?.Quit) {
+      nativeBridge.Quit()
       return
     }
     window.close()
@@ -787,11 +805,16 @@ export default function App() {
           onOpenSyncSettings={openGithubConnect}
           theme={settings.theme}
           onToggleTheme={toggleTheme}
+          nativeWindow={Boolean(nativeBridge)}
+          onMinimize={() => nativeBridge?.WindowMinimise?.()}
+          onMaximize={() => nativeBridge?.WindowToggleMaximise?.()}
+          onCloseWindow={handleExit}
         />
 
         <div className="window-workspace">
           {panelVisible.capture && (
             <WindowFrame
+              key={`capture-${layoutEpoch}`}
               id="capture"
               title="添加日程"
               icon={<Icon name="plus" size={15} />}
@@ -805,6 +828,7 @@ export default function App() {
           )}
           {panelVisible.week && (
             <WindowFrame
+              key={`week-${layoutEpoch}`}
               id="week"
               title="周概览"
               icon={<Icon name="grid" size={15} />}
@@ -834,6 +858,7 @@ export default function App() {
           )}
           {panelVisible.timeline && (
             <WindowFrame
+              key={`timeline-${layoutEpoch}`}
               id="timeline"
               title="时间轴"
               icon={<Icon name="calendar" size={15} />}
@@ -849,7 +874,6 @@ export default function App() {
                 onSelectDate={setSelectedDate}
                 onShiftWeek={shiftWeek}
                 onToday={() => setSelectedDate(startOfDay(new Date()))}
-                onOpenWeek={() => setPanelVisible((current) => ({ ...current, week: true }))}
                 onAdd={openCapture}
                 onEventClick={(event) => setActiveEventId(event.id)}
                 onSync={() => handleSync()}
@@ -862,6 +886,7 @@ export default function App() {
           )}
           {panelVisible.inbox && (
             <WindowFrame
+              key={`inbox-${layoutEpoch}`}
               id="inbox"
               title="整理箱"
               icon={<Icon name="inbox" size={15} />}
@@ -890,11 +915,13 @@ export default function App() {
           )}
           {settingsOpen && (
             <WindowFrame
+              key={`settings-${layoutEpoch}`}
               id="settings"
               title="设置"
               icon={<Icon name="settings" size={15} />}
               initial={layout.settings}
               zIndex={windowZ.settings}
+              floating
               onFocus={() => bringWindowToFront('settings')}
               onClose={() => setSettingsOpen(false)}
             >
@@ -994,7 +1021,6 @@ export default function App() {
               onSelectDate={setSelectedDate}
               onShiftWeek={shiftWeek}
               onToday={() => setSelectedDate(startOfDay(new Date()))}
-              onOpenWeek={() => setViewMode('week')}
               onAdd={() => setMobileSheet('capture')}
               onEventClick={(event) => setActiveEventId(event.id)}
               onSync={() => handleSync()}
@@ -1225,4 +1251,5 @@ export default function App() {
     </div>
   )
 }
+
 

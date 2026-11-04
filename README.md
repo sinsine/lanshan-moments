@@ -5,7 +5,7 @@
 
 ![桌面端：顶部菜单与浮动窗口](./docs/assets/v0.3/desktop.png)
 
-**v0.3.0 · 顶部菜单与可拖拽窗口。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；桌面端改为 AE 式顶部菜单和可自由拖拽的浮动窗口；手机端改为课程表式周视图；模型接口支持提供商预设、获取并选择模型，API Key 保存在本机。
+**v0.3.1 · 顶部菜单与可拖拽窗口。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；桌面端改为 AE 式顶部菜单和可自由拖拽的浮动窗口；手机端改为课程表式周视图；模型接口支持提供商预设、获取并选择模型，API Key 保存在本机。截图使用临时示例数据；安装后默认不附带演示日程。
 
 <p>
   <img src="./docs/assets/v0.3/mobile-week.png" alt="手机端周表" width="300" />
@@ -197,6 +197,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 - `v0.2.1`：ColorOS 16 / Android 16 安全区修正，版本号同步。
 - `v0.2.2`：内置公开 Client ID；已验证 GitHub 设备码接口。
 - `v0.3.0`：顶部菜单、自由浮动窗口、手机周表、状态栏隐藏、模型预设/获取模型/Key 本地保存。
+- `v0.3.1`：401 提示、同步高级项折叠、移除时间轴本周按钮、无演示日程、登录持久化、无边框窗口。
 
 每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
 
@@ -215,7 +216,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## 安全与隐私
 
 - 公开仓库不包含真实日程、Token、API Key；示例数据全部虚构。
-- API Key 按用户要求保存在本机 `localStorage`，关闭应用后仍保留；GitHub Token 仍只放 `sessionStorage`。原生端后续会把两者迁移到系统钥匙串。
+- API Key 与 GitHub Token 按用户要求保存在本机 `localStorage`，关闭/更新应用后仍保留。原生端后续会迁移到系统钥匙串。
 - fine-grained PAT 只申请目标私有仓库的 Contents 读写；OAuth 只使用公开 Client ID。
 - 同步可选；默认单机可用。日程敏感，是否把原文发给模型必须由用户选择。
 
@@ -224,6 +225,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## License
 
 [MIT](./LICENSE)
+
 
 
 

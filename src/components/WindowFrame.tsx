@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Rnd } from 'react-rnd'
 import { Icon } from './Icons'
 
@@ -8,6 +8,7 @@ export interface WindowFrameProps {
   icon?: ReactNode
   initial: { x: number; y: number; width: number; height: number }
   zIndex: number
+  floating?: boolean
   onFocus: () => void
   onClose: () => void
   children: ReactNode
@@ -147,16 +148,18 @@ export function WindowFrame({
   icon,
   initial,
   zIndex,
+  floating = false,
   onFocus,
   onClose,
   children,
 }: WindowFrameProps) {
+  const [isFloating, setIsFloating] = useState(floating)
   return (
     <>
       <style>{windowFrameStyles}</style>
       <Rnd
         id={id}
-        className="window-frame"
+        className={`window-frame ${isFloating ? 'window-frame--floating' : 'window-frame--tiled'}`}
         default={initial}
         style={{
           zIndex,
@@ -166,7 +169,6 @@ export function WindowFrame({
         }}
         minWidth={300}
         minHeight={180}
-        bounds="parent"
         dragHandleClassName="window-frame__bar"
         cancel=".window-frame__close"
         enableResizing={{
@@ -180,6 +182,7 @@ export function WindowFrame({
           topLeft: true,
         }}
         resizeHandleClasses={resizeHandleClasses}
+        onDragStart={() => setIsFloating(true)}
         onClick={onFocus}
         role="dialog"
         aria-label={title}

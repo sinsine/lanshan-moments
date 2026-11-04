@@ -27,7 +27,7 @@ func (a *App) startup(ctx context.Context) {
 
 // Version is exposed to the web UI as a small native health check.
 func (a *App) Version() string {
-	return "0.3.0"
+	return "0.3.1"
 }
 
 // HTTPResponse is the small envelope returned to the WebView.
@@ -92,6 +92,16 @@ func (a *App) Quit() {
 	wailsruntime.Quit(a.ctx)
 }
 
+// WindowMinimise minimises the frameless window from the custom top bar.
+func (a *App) WindowMinimise() {
+	wailsruntime.WindowMinimise(a.ctx)
+}
+
+// WindowToggleMaximise toggles maximise/restore from the custom top bar.
+func (a *App) WindowToggleMaximise() {
+	wailsruntime.WindowToggleMaximise(a.ctx)
+}
+
 // OpenExternal opens GitHub's authorization page in the system browser.
 func (a *App) OpenExternal(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
@@ -101,6 +111,7 @@ func (a *App) OpenExternal(rawURL string) error {
 	wailsruntime.BrowserOpenURL(a.ctx, rawURL)
 	return nil
 }
+
 
 
 

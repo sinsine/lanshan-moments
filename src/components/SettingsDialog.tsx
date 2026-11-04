@@ -66,6 +66,11 @@ export function SettingsDialog({
   const save = () => onSave(form, modelKey, repoToken)
 
   const loadModels = async () => {
+    if (!modelKey.trim()) {
+      setModels([])
+      setModelsError('请先填写 API Key，再获取模型')
+      return
+    }
     setModelsLoading(true)
     setModelsError('')
     try {
@@ -73,8 +78,13 @@ export function SettingsDialog({
       setModels(list)
       if (!form.model) set('model', list[0].id)
     } catch (error) {
+      const message = error instanceof Error ? error.message : '获取模型失败'
       setModels([])
-      setModelsError(error instanceof Error ? error.message : '获取模型失败')
+      setModelsError(
+        /401/.test(message)
+          ? '401：API Key 无效、已过期，或不属于当前提供商。请重新复制 Key，并确认接口地址与提供商一致。'
+          : message,
+      )
     } finally {
       setModelsLoading(false)
     }
@@ -193,7 +203,7 @@ export function SettingsDialog({
                     className="text-button text-button--outline"
                     type="button"
                     onClick={() => void loadModels()}
-                    disabled={modelsLoading}
+                    disabled={modelsLoading || !modelKey.trim()}
                   >
                     {modelsLoading ? '获取中…' : '获取模型'}
                   </button>
@@ -267,6 +277,8 @@ export function SettingsDialog({
                 </span>
                 <Icon name="arrow-right" size={17} />
               </button>
+              <details className="sync-advanced">
+                <summary>手动配置与高级选项</summary>
               <div className="field-grid">
                 <label className="field">
                   <span>GitHub 用户名</span>
@@ -323,7 +335,7 @@ export function SettingsDialog({
                 <Icon name="keyboard" size={15} />
                 <p>
                   手动 Token 只勾选该仓库的 <strong>Contents: Read and write</strong> 即可。Token
-                  同样只存于本次会话。仓库里会生成 <code>schedule.json</code>。
+                  保存在本机，关闭应用后仍保留。仓库里会生成 <code>schedule.json</code>。
                 </p>
               </div>
               <div className="sync-row">
@@ -341,6 +353,7 @@ export function SettingsDialog({
                 </button>
                 {syncMessage && <span className="sync-row__message">{syncMessage}</span>}
               </div>
+              </details>
             </>
           )}
 

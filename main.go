@@ -17,6 +17,7 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:     "阑珊时刻",
+		Frameless: true,
 		Width:     1440,
 		Height:    900,
 		MinWidth:  980,
