@@ -1,9 +1,15 @@
-import type { DraftEvent, EventCategory } from '../types'
+import type {
+  Attendance,
+  ClarifyQuestion,
+  DraftEvent,
+  EventCategory,
+} from '../types'
 import {
   addDays,
   atTime,
   dateKey,
   endOfMonth,
+  formatTime,
   isoWithOffset,
   startOfDay,
   startOfWeek,
@@ -36,6 +42,8 @@ interface TimeMatch {
   startMinutes: number
   endMinutes: number
   matched: string
+  /** True when the source stated an end time or a duration. */
+  endExplicit: boolean
 }
 
 interface DurationMatch {
@@ -208,6 +216,7 @@ function parseTime(segment: string, eveningContext: boolean): TimeMatch | null {
       startMinutes: start * 60 + Number(colon[3]),
       endMinutes: end * 60 + Number(colon[6] ?? 0),
       matched: colon[0],
+      endExplicit: true,
     }
   }
 
@@ -224,6 +233,7 @@ function parseTime(segment: string, eveningContext: boolean): TimeMatch | null {
       startMinutes: start * 60 + minuteFromToken(range[3]),
       endMinutes: end * 60 + minuteFromToken(range[6]),
       matched: range[0],
+      endExplicit: true,
     }
   }
 
@@ -236,7 +246,12 @@ function parseTime(segment: string, eveningContext: boolean): TimeMatch | null {
     const hour = to24Hour(cnNumber(single[2]), single[1], eveningContext)
     if (!Number.isFinite(hour) || hour > 23) return null
     const minutes = hour * 60 + minuteFromToken(single[3])
-    return { startMinutes: minutes, endMinutes: minutes + 60, matched: single[0] }
+    return {
+      startMinutes: minutes,
+      endMinutes: minutes + 60,
+      matched: single[0],
+      endExplicit: false,
+    }
   }
 
   const colonSingle = segment.match(
@@ -246,7 +261,12 @@ function parseTime(segment: string, eveningContext: boolean): TimeMatch | null {
     const hour = to24Hour(Number(colonSingle[2]), colonSingle[1], eveningContext)
     if (hour > 23) return null
     const minutes = hour * 60 + Number(colonSingle[3])
-    return { startMinutes: minutes, endMinutes: minutes + 60, matched: colonSingle[0] }
+    return {
+      startMinutes: minutes,
+      endMinutes: minutes + 60,
+      matched: colonSingle[0],
+      endExplicit: false,
+    }
   }
 
   return null
@@ -352,6 +372,76 @@ function makeId(): string {
   return `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+function questionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `q_${crypto.randomUUID()}`
+  return `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** Questions are intentionally short and always include a free-text option. */
+export function buildClarifyQuestions(
+  segment: string,
+  start: string | null,
+  endExplicit: boolean,
+  location: string,
+  isEventLike: boolean,
+): ClarifyQuestion[] {
+  const questions: ClarifyQuestion[] = []
+
+  if (!location.trim()) {
+    questions.push({
+      id: questionId(),
+      field: 'location',
+      prompt: '地点还没有确定，在哪里？',
+      options: [
+        { id: 'online', label: '线上', value: '线上' },
+        { id: 'pending', label: '暂不确定', value: '待定' },
+      ],
+      allowCustom: true,
+      customPlaceholder: '输入地点，例如：3 楼会议室',
+    })
+  }
+
+  if (start && !endExplicit) {
+    const startDate = new Date(start)
+    const endOption = (minutes: number): { id: string; label: string; value: string } => {
+      const endDate = new Date(startDate.getTime() + minutes * 60_000)
+      return {
+        id: `end_${minutes}`,
+        label: `${minutes < 60 ? `${minutes} 分钟` : `${minutes / 60} 小时`}（${formatTime(
+          isoWithOffset(endDate),
+        )} 结束）`,
+        value: isoWithOffset(endDate),
+      }
+    }
+    questions.push({
+      id: questionId(),
+      field: 'end',
+      prompt: '预计什么时候结束？',
+      options: [endOption(30), endOption(60), endOption(90), endOption(120)],
+      allowCustom: true,
+      customPlaceholder: '输入结束时间，例如：16:30 或 1.5 小时',
+    })
+  }
+
+  const attendanceStated = /(?:我|本人).{0,6}(?:参加|出席|去|不去|不参加|无法参加)/.test(segment)
+  if (isEventLike && !attendanceStated) {
+    questions.push({
+      id: questionId(),
+      field: 'attendance',
+      prompt: '这个活动你需要参加吗？',
+      options: [
+        { id: 'required', label: '需要参加', value: 'required' },
+        { id: 'optional', label: '可选，先留着', value: 'optional' },
+        { id: 'not_required', label: '不需要，仅记录', value: 'not_required' },
+      ],
+      allowCustom: true,
+      customPlaceholder: '输入你的安排，例如：只参加前半段',
+    })
+  }
+
+  return questions
+}
+
 function parseSegment(
   raw: string,
   now: Date,
@@ -411,7 +501,7 @@ function parseSegment(
   ].filter((value): value is string => Boolean(value))
   let title = cleanTitle(segment, removed)
   const extracted = extractLocation(title)
-  const location = extracted.location
+  const location = extracted.location ?? ''
   title = cleanTitle(extracted.text, [])
   if (!title) title = '未命名日程'
   if (title.length > 60) title = `${title.slice(0, 58)}…`
@@ -440,8 +530,27 @@ function parseSegment(
     end = isoWithOffset(finish)
   } else if (startDate && allDay) {
     start = isoWithOffset(atTime(startDate, 0, 0))
-    end = null
+    // An all-day event still has an explicit boundary; this keeps the data
+    // model consistent and lets week view render it without a special case.
+    end = isoWithOffset(atTime(addDays(startDate, 1), 0, 0))
   }
+
+  const isEventLike = /会议|评审|活动|培训|聚会|婚礼|演出|面试|上课|约见|讨论/.test(segment)
+  const attendance: Attendance = /不参加|不去|无法参加/.test(segment)
+    ? 'not_required'
+    : /(?:我|本人).{0,6}(?:参加|出席|去)/.test(segment)
+      ? 'required'
+      : 'unknown'
+  const questions = start
+    ? buildClarifyQuestions(
+        segment,
+        start,
+        allDay || Boolean(timeMatch?.endExplicit || durationMatch),
+        location,
+        isEventLike,
+      )
+    : []
+  if (!location.trim() && start) warnings.push('地点待确认')
 
   const excerpt = segment.length > 95 ? `${segment.slice(0, 93)}…` : segment
   const timestamp = new Date().toISOString()
@@ -457,7 +566,11 @@ function parseSegment(
     notes: undefined,
     deadline,
     category,
-    status: warnings.length > 0 || confidence < 0.8 ? 'tentative' : 'confirmed',
+    status:
+      warnings.length > 0 || questions.length > 0 || confidence < 0.8
+        ? 'tentative'
+        : 'confirmed',
+    attendance,
     source: { kind: 'text', excerpt },
     confidence,
     warnings: Array.from(new Set(warnings)),
@@ -467,6 +580,7 @@ function parseSegment(
     deviceId,
     rev: 1,
     selected: true,
+    questions,
   }
 }
 

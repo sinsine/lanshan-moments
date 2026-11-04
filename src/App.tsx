@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import type {
   AppSettings,
   AttachedImage,
+  ClarifyOption,
+  ClarifyQuestion,
   DraftEvent,
   ScheduleDocument,
   ScheduleEvent,
 } from './types'
 import { addDays, dateKey, formatTime, startOfDay } from './lib/date'
+import { t } from './i18n'
+import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
 import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
 import {
@@ -28,10 +32,18 @@ import {
   saveSettings,
 } from './lib/storage'
 import { mergeSchedules, syncGitHub } from './lib/sync'
+import {
+  clearNotifications,
+  openExactAlarmSettings,
+  refreshNotificationsIfEnabled,
+  syncNotifications,
+} from './lib/notifications'
 import { CapturePanel } from './components/CapturePanel'
 import { Timeline } from './components/Timeline'
+import { WeekOverview } from './components/WeekOverview'
 import { Inspector } from './components/Inspector'
 import { SettingsDialog } from './components/SettingsDialog'
+import { GitHubConnectDialog } from './components/GitHubConnectDialog'
 import { EventDialog } from './components/EventDialog'
 import { Icon, LogoMark } from './components/Icons'
 
@@ -73,6 +85,7 @@ export default function App() {
   const [apiKey, setApiKey] = useState(loadApiKey)
   const [githubToken, setGithubToken] = useState(loadGithubToken)
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -81,29 +94,52 @@ export default function App() {
   const [stage, setStage] = useState('正在拆解时间表达…')
   const [engineLabel, setEngineLabel] = useState('离线规则')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const [activeEventId, setActiveEventId] = useState<string | null>(null)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState('')
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null)
+  const [notificationsOn, setNotificationsOn] = useState(
+    () => localStorage.getItem('lanshan.notifications') === '1',
+  )
+  const [notificationStatus, setNotificationStatus] = useState('')
 
   const hasAiKey = apiKey.trim().length > 0
+  const githubClientId =
+    settings.githubClientId || (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || ''
   const syncConnected = Boolean(
     settings.githubOwner && settings.githubRepo && githubToken,
   )
   const activeEvent = events.find((event) => event.id === activeEventId) ?? null
   const selectedDrafts = drafts.filter((draft) => draft.selected)
   const previewEvents = selectedDrafts.map((draft) => {
-    const { selected: _selected, ...event } = draft
+    const { selected: _selected, questions: _questions, ...event } = draft
     void _selected
+    void _questions
     return event
   })
   const scheduleDoc = useMemo(
     () => makeScheduleDocument(sortEvents([...events, ...previewEvents]), deviceId),
     [events, previewEvents, deviceId],
   )
-  const liveEvents = events.filter((event) => !event.deletedAt)
+  const liveEvents = useMemo(() => events.filter((event) => !event.deletedAt), [events])
+
+  useEffect(() => {
+    if (!notificationsOn) return
+    let cancelled = false
+    refreshNotificationsIfEnabled(liveEvents, true)
+      .then((result) => {
+        if (!cancelled && result) setNotificationStatus(result.message)
+      })
+      .catch(() => {
+        if (!cancelled) setNotificationStatus('提醒刷新失败，请检查通知权限。')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liveEvents, notificationsOn])
 
   useEffect(() => {
     saveEvents(events)
@@ -135,12 +171,13 @@ export default function App() {
   }, [toast])
 
   useEffect(() => {
-    const locked = settingsOpen || Boolean(activeEvent) || mobileSheet !== null
+    const locked =
+      settingsOpen || githubDialogOpen || Boolean(activeEvent) || mobileSheet !== null
     document.body.style.overflow = locked ? 'hidden' : ''
     return () => {
       document.body.style.overflow = ''
     }
-  }, [settingsOpen, activeEvent, mobileSheet])
+  }, [settingsOpen, githubDialogOpen, activeEvent, mobileSheet])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -151,6 +188,7 @@ export default function App() {
         target?.getAttribute('contenteditable') === 'true'
       if (event.key === 'Escape') {
         setSettingsOpen(false)
+        setGithubDialogOpen(false)
         setActiveEventId(null)
         setMobileSheet(null)
         return
@@ -184,11 +222,12 @@ export default function App() {
     setInput(SAMPLE)
     if (isMobile()) setMobileSheet('capture')
     window.setTimeout(() => {
-      document
-        .querySelector<HTMLTextAreaElement>(
-          isMobile() ? '.capture--compact textarea' : '.capture:not(.capture--compact) textarea',
-        )
-        ?.focus()
+      const textarea = document.querySelector<HTMLTextAreaElement>(
+        isMobile() ? '.capture--compact textarea' : '.capture:not(.capture--compact) textarea',
+      )
+      textarea?.focus()
+      textarea?.setSelectionRange(0, 0)
+      if (textarea) textarea.scrollTop = 0
     }, 80)
   }
 
@@ -272,7 +311,40 @@ export default function App() {
     setDrafts((current) => current.map((draft) => ({ ...draft, selected })))
   }
 
+  const handleAnswerOption = (
+    draft: DraftEvent,
+    question: ClarifyQuestion,
+    option: ClarifyOption,
+  ) => {
+    const result = applyClarifyOption(draft, question, option)
+    if (result.error) {
+      notify(result.error, { tone: 'error' })
+      return
+    }
+    setDrafts((current) => current.map((item) => (item.id === draft.id ? result.draft : item)))
+  }
+
+  const handleAnswerCustom = (draft: DraftEvent, question: ClarifyQuestion, text: string) => {
+    const result = applyClarifyCustom(draft, question, text)
+    if (result.error) {
+      notify(result.error, { tone: 'error' })
+      return
+    }
+    setDrafts((current) => current.map((item) => (item.id === draft.id ? result.draft : item)))
+  }
+
   const handleConfirm = () => {
+    const selected = drafts.filter((draft) => draft.selected)
+    if (selected.length === 0) return
+    const invalid = selected.filter((draft) => missingRequiredFields(draft).length > 0)
+    if (invalid.length > 0) {
+      notify(
+        `还有 ${invalid.length} 条缺少开始/结束/地点，先回答右侧的问题或勾选“待定”`,
+        { tone: 'error' },
+      )
+      setTab('drafts')
+      return
+    }
     const chosen = draftsToEvents(drafts)
     if (chosen.length === 0) return
     const previous = events
@@ -310,6 +382,47 @@ export default function App() {
         setToast(null)
       },
     })
+  }
+
+  const openGithubConnect = () => {
+    setSettingsOpen(false)
+    setGithubDialogOpen(true)
+  }
+
+  const handleToggleNotifications = async () => {
+    if (notificationsOn) {
+      await clearNotifications().catch(() => undefined)
+      setNotificationsOn(false)
+      localStorage.setItem('lanshan.notifications', '0')
+      setNotificationStatus('已关闭本机提醒。')
+      notify('已关闭本机提醒')
+      return
+    }
+    try {
+      const result = await syncNotifications(liveEvents)
+      setNotificationStatus(result.message)
+      if (!result.supported) {
+        notify('通知只在 Android / iOS 原生端可用；当前是网页版', { tone: 'error' })
+        return
+      }
+      if (!result.granted) {
+        notify(result.message, { tone: 'error' })
+        return
+      }
+      setNotificationsOn(true)
+      localStorage.setItem('lanshan.notifications', '1')
+      notify(result.message)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '开启提醒失败', { tone: 'error' })
+    }
+  }
+
+  const handleOpenExactAlarm = async () => {
+    try {
+      await openExactAlarmSettings()
+    } catch {
+      notify('无法打开精确闹钟设置，请到系统设置中手动授权', { tone: 'error' })
+    }
   }
 
   const handleSaveSettings = (next: AppSettings, nextApiKey: string, nextGithubToken: string) => {
@@ -358,6 +471,29 @@ export default function App() {
     }
   }
 
+  const handleGithubConnected = (payload: {
+    token: string
+    login: string
+    avatarUrl: string
+    owner: string
+    repo: string
+    branch: string
+  }) => {
+    const next: AppSettings = {
+      ...settings,
+      githubOwner: payload.owner,
+      githubRepo: payload.repo,
+      githubBranch: payload.branch,
+    }
+    setSettings(next)
+    saveSettings(next)
+    setGithubToken(payload.token)
+    saveGithubToken(payload.token)
+    setGithubDialogOpen(false)
+    notify(`已连接 @${payload.login}，开始同步 ${payload.repo}`)
+    void handleSync(next, payload.token)
+  }
+
   const handleExport = () => {
     downloadText(`lanshan-schedule-${dateKey(new Date())}.json`, formatScheduleJson(scheduleDoc))
     notify('schedule.json 已导出')
@@ -375,7 +511,13 @@ export default function App() {
         timezone: imported.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
         updatedAt: imported.updatedAt ?? new Date().toISOString(),
         deviceId: imported.deviceId ?? 'imported',
-        events: imported.events.filter((event) => event && typeof event.id === 'string'),
+        events: imported.events
+          .filter((event) => event && typeof event.id === 'string')
+          .map((event) => ({
+            ...event,
+            location: event.location ?? '',
+            attendance: event.attendance ?? 'unknown',
+          })),
       })
       setEvents(sortEvents(merged.document.events))
       setSettingsOpen(false)
@@ -429,7 +571,12 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${viewMode === 'week' ? 'app-shell--week' : ''}`}>
+      <div className="liquid-bg" aria-hidden="true">
+        <span className="blob blob-1" />
+        <span className="blob blob-2" />
+        <span className="blob blob-3" />
+      </div>
       <aside className="rail">
         <button
           className="rail__brand"
@@ -440,9 +587,23 @@ export default function App() {
           <LogoMark size={28} />
         </button>
         <nav className="rail__nav" aria-label="主导航">
-          <button className="rail__button is-active" title="时间轴" type="button">
+          <button
+            className={`rail__button ${viewMode === 'day' ? 'is-active' : ''}`}
+            title="时间轴"
+            type="button"
+            onClick={() => setViewMode('day')}
+          >
             <Icon name="calendar" size={19} />
-            <span>时间轴</span>
+            <span>{t('nav.timeline')}</span>
+          </button>
+          <button
+            className={`rail__button ${viewMode === 'week' ? 'is-active' : ''}`}
+            title="本周概览"
+            type="button"
+            onClick={() => setViewMode('week')}
+          >
+            <Icon name="grid" size={19} />
+            <span>{t('nav.week')}</span>
           </button>
           <button
             className="rail__button"
@@ -454,7 +615,7 @@ export default function App() {
             }}
           >
             <Icon name="inbox" size={19} />
-            <span>整理稿</span>
+            <span>{t('nav.review')}</span>
             {drafts.length > 0 && <i className="rail__badge">{drafts.length}</i>}
           </button>
           <button
@@ -464,7 +625,7 @@ export default function App() {
             onClick={() => setSettingsOpen(true)}
           >
             <Icon name="settings" size={19} />
-            <span>设置</span>
+            <span>{t('nav.settings')}</span>
           </button>
         </nav>
         <div className="rail__bottom">
@@ -480,7 +641,7 @@ export default function App() {
             }
           >
             <Icon name={settings.theme === 'dark' ? 'sun' : 'moon'} size={18} />
-            <span>{settings.theme === 'dark' ? '浅色' : '深色'}</span>
+            <span>{settings.theme === 'dark' ? t('nav.light') : t('nav.dark')}</span>
           </button>
           <span className="rail__version">v0.1</span>
         </div>
@@ -488,27 +649,48 @@ export default function App() {
 
       <CapturePanel {...captureProps} />
 
-      <Timeline
-        events={liveEvents}
-        drafts={drafts}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
-        onShiftWeek={shiftWeek}
-        onToday={() => setSelectedDate(startOfDay(new Date()))}
-        onAdd={() => {
-          if (isMobile()) setMobileSheet('capture')
-          else
-            document
-              .querySelector<HTMLTextAreaElement>('.capture:not(.capture--compact) textarea')
-              ?.focus()
-        }}
-        onEventClick={(event) => setActiveEventId(event.id)}
-        onSync={() => handleSync()}
-        onOpenSettings={() => setSettingsOpen(true)}
-        syncLabel={syncLabel}
-        syncConnected={syncConnected}
-        syncing={syncing}
-      />
+      {viewMode === 'day' ? (
+        <Timeline
+          events={liveEvents}
+          drafts={drafts}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onOpenWeek={() => setViewMode('week')}
+          onAdd={() => {
+            if (isMobile()) setMobileSheet('capture')
+            else
+              document
+                .querySelector<HTMLTextAreaElement>('.capture:not(.capture--compact) textarea')
+                ?.focus()
+          }}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      ) : (
+        <WeekOverview
+          events={liveEvents}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onOpenDay={(date) => {
+            setSelectedDate(date)
+            setViewMode('day')
+          }}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      )}
 
       <Inspector
         drafts={drafts}
@@ -517,6 +699,8 @@ export default function App() {
         onTab={setTab}
         onToggle={handleToggleDraft}
         onSelectAll={handleSelectAll}
+        onAnswerOption={handleAnswerOption}
+        onAnswerCustom={handleAnswerCustom}
         onConfirm={handleConfirm}
         onCopy={handleCopyJson}
         onDownload={handleExport}
@@ -537,7 +721,7 @@ export default function App() {
         <div className="mobile-head__actions">
           <button
             className={`icon-button ${syncConnected ? 'is-synced' : ''}`}
-            onClick={() => (syncConnected ? handleSync() : setSettingsOpen(true))}
+            onClick={() => (syncConnected ? handleSync() : openGithubConnect())}
             aria-label="同步"
             type="button"
           >
@@ -557,7 +741,7 @@ export default function App() {
       <nav className="mobile-nav" aria-label="移动端导航">
         <button className="is-active" type="button">
           <Icon name="calendar" size={19} />
-          <span>时间轴</span>
+          <span>{t('nav.timeline')}</span>
         </button>
         <button
           type="button"
@@ -570,7 +754,7 @@ export default function App() {
             <Icon name="inbox" size={19} />
             {drafts.length > 0 && <i>{drafts.length}</i>}
           </span>
-          <span>整理稿</span>
+          <span>{t('nav.review')}</span>
         </button>
         <button
           className="mobile-nav__capture"
@@ -582,7 +766,7 @@ export default function App() {
         </button>
         <button type="button" onClick={() => setSettingsOpen(true)}>
           <Icon name="settings" size={19} />
-          <span>设置</span>
+          <span>{t('nav.settings')}</span>
         </button>
       </nav>
 
@@ -617,6 +801,8 @@ export default function App() {
               onTab={setTab}
               onToggle={handleToggleDraft}
               onSelectAll={handleSelectAll}
+              onAnswerOption={handleAnswerOption}
+              onAnswerCustom={handleAnswerCustom}
               onConfirm={handleConfirm}
               onCopy={handleCopyJson}
               onDownload={handleExport}
@@ -645,6 +831,20 @@ export default function App() {
           onExport={handleExport}
           onImport={handleImport}
           onClear={handleClear}
+          onOpenConnect={openGithubConnect}
+          notificationsOn={notificationsOn}
+          notificationStatus={notificationStatus}
+          onToggleNotifications={handleToggleNotifications}
+          onOpenExactAlarm={handleOpenExactAlarm}
+        />
+      )}
+
+      {githubDialogOpen && (
+        <GitHubConnectDialog
+          clientId={githubClientId}
+          initialToken={githubToken || undefined}
+          onClose={() => setGithubDialogOpen(false)}
+          onConnected={handleGithubConnected}
         />
       )}
 

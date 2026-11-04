@@ -1,8 +1,10 @@
 # 可行性分析：阑珊时刻
 
-> 版本：v0.1 · 2026-11-04  
+> 版本：v0.2 · 2026-11-04  
 > 结论：**有条件 Go**。先做 Windows + Android 的窄 MVP，把“录入 → 确认 → 时间轴 → 同步”跑通；小组件、精确闹钟、五端齐发放到验证之后。  
 > 配套 Demo：仓库根目录 `npm run dev`。配套设计稿：[frontend-design.md](./frontend-design.md)、数据协议：[data-model.md](./data-model.md)。
+
+**v0.2 实现状态**：本周概览、墨辰日/夜视觉、必填时间/地点校验、AI 澄清选项、GitHub 图形化 Device Flow、Wails Windows、Capacitor Android、基础本地通知已落地；Android 桌面小组件和 iOS/macOS/HarmonyOS 原生端仍未开始。
 
 ---
 

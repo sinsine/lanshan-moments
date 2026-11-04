@@ -28,6 +28,7 @@ interface TimelineProps {
   onSelectDate: (date: Date) => void
   onShiftWeek: (direction: -1 | 1) => void
   onToday: () => void
+  onOpenWeek: () => void
   onAdd: () => void
   onEventClick: (event: ScheduleEvent) => void
   onSync: () => void
@@ -104,6 +105,7 @@ export function Timeline({
   onSelectDate,
   onShiftWeek,
   onToday,
+  onOpenWeek,
   onAdd,
   onEventClick,
   onSync,
@@ -170,8 +172,12 @@ export function Timeline({
         </div>
 
         <div className="timeline__actions">
-          <button className="ghost-button ghost-button--tiny" onClick={onToday} type="button">
+          <button className="ghost-button ghost-button--tiny today-button" onClick={onToday} type="button">
             今天
+          </button>
+          <button className="ghost-button ghost-button--tiny week-open-button" onClick={onOpenWeek} type="button">
+            <Icon name="grid" size={13} />
+            本周
           </button>
           <div className="week-arrows">
             <button className="icon-button" onClick={() => onShiftWeek(-1)} aria-label="上一周">

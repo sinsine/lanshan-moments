@@ -42,8 +42,10 @@
         "end",
         "allDay",
         "timezone",
+        "location",
         "category",
         "status",
+        "attendance",
         "source",
         "confidence",
         "warnings",
@@ -84,7 +86,8 @@
         },
         "location": {
           "type": "string",
-          "maxLength": 120
+          "maxLength": 120,
+          "description": "必填。可以用「待定」作为用户明确选择的占位值。"
         },
         "notes": {
           "type": "string",
@@ -100,6 +103,10 @@
         },
         "status": {
           "enum": ["confirmed", "tentative"]
+        },
+        "attendance": {
+          "enum": ["unknown", "required", "optional", "not_required"],
+          "description": "用户是否需要参加；不明确时由 AI 提问。"
         },
         "source": {
           "type": "object",

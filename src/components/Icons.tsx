@@ -3,6 +3,7 @@ import type { ReactNode, SVGProps } from 'react'
 export type IconName =
   | 'sparkles'
   | 'calendar'
+  | 'grid'
   | 'inbox'
   | 'settings'
   | 'sun'
@@ -45,6 +46,13 @@ const paths: Record<IconName, ReactNode> = {
       <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
       <path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17" />
       <path d="M8 13h3M8 16.5h6.5" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3.5" y="4" width="7" height="16" rx="1.5" />
+      <rect x="13.5" y="4" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13" width="7" height="7" rx="1.5" />
     </>
   ),
   inbox: (

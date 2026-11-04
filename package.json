@@ -1,8 +1,8 @@
 {
   "name": "lanshan-moments",
   "private": true,
-  "version": "0.1.0",
-  "description": "阑珊时刻：AI 驱动的跨设备日程整理工具（可行性 Demo）",
+  "version": "0.2.0",
+  "description": "阑珊时刻：AI 驱动的跨设备日程整理工具（Windows / Android）",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -14,10 +14,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.0.1",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

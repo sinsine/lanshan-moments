@@ -11,11 +11,15 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Local demo / test artifacts
 .tmp/
 shot-*.png
 npm-install.log
+release/
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +31,6 @@ npm-install.log
 *.njsproj
 *.sln
 *.sw?
+
+# Wails generated bindings
+wailsjs/

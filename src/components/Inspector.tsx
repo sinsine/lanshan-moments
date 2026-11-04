@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { DraftEvent, ScheduleDocument } from '../types'
+import type {
+  ClarifyOption,
+  ClarifyQuestion,
+  DraftEvent,
+  ScheduleDocument,
+} from '../types'
 import {
   dateKey,
   formatDayCN,
@@ -7,7 +12,9 @@ import {
   relativeDayLabel,
   weekdayCN,
 } from '../lib/date'
+import { missingRequiredFields, openQuestionCount } from '../lib/clarify'
 import { Icon } from './Icons'
+import { ClarifyQuestions } from './ClarifyQuestions'
 
 type InspectorTab = 'drafts' | 'json'
 
@@ -18,6 +25,12 @@ interface InspectorProps {
   onTab: (tab: InspectorTab) => void
   onToggle: (id: string) => void
   onSelectAll: (selected: boolean) => void
+  onAnswerOption: (
+    draft: DraftEvent,
+    question: ClarifyQuestion,
+    option: ClarifyOption,
+  ) => void
+  onAnswerCustom: (draft: DraftEvent, question: ClarifyQuestion, text: string) => void
   onConfirm: () => void
   onCopy: () => void
   onDownload: () => void
@@ -77,6 +90,8 @@ export function Inspector({
   onTab,
   onToggle,
   onSelectAll,
+  onAnswerOption,
+  onAnswerCustom,
   onConfirm,
   onCopy,
   onDownload,
@@ -87,6 +102,9 @@ export function Inspector({
 }: InspectorProps) {
   const [copied, setCopied] = useState(false)
   const selectedCount = drafts.filter((draft) => draft.selected).length
+  const incompleteCount = drafts.filter(
+    (draft) => draft.selected && missingRequiredFields(draft).length > 0,
+  ).length
   const allSelected = drafts.length > 0 && selectedCount === drafts.length
   const json = useMemo(() => highlightJson(JSON.stringify(document, null, 2)), [document])
 
@@ -193,12 +211,15 @@ export function Inspector({
                 </div>
 
                 <div className="draft-list">
-                  {drafts.map((draft, index) => (
+                  {drafts.map((draft, index) => {
+                    const missing = missingRequiredFields(draft)
+                    const openQuestions = openQuestionCount(draft)
+                    return (
                     <article
                       key={draft.id}
                       className={`draft-card category-${draft.category} ${
                         draft.selected ? 'is-selected' : ''
-                      }`}
+                      } ${missing.length > 0 ? 'draft-card--incomplete' : ''}`}
                     >
                       <button
                         className="draft-card__check"
@@ -232,24 +253,36 @@ export function Inspector({
                           <Icon name="clock" size={12} />
                           {draftWhen(draft)}
                         </p>
-                        {draft.location && (
-                          <p className="draft-card__where">
-                            <Icon name="pin" size={12} />
-                            {draft.location}
+                        <p className={`draft-card__where ${draft.location ? '' : 'is-missing'}`}>
+                          <Icon name="pin" size={12} />
+                          {draft.location || '地点待确认'}
+                        </p>
+                        {missing.length > 0 && (
+                          <p className="draft-card__missing">
+                            <Icon name="alert" size={12} />
+                            还差：{missing.join('、')}
                           </p>
                         )}
-                        {draft.warnings.length > 0 && (
+                        {draft.warnings.length > 0 && missing.length === 0 && (
                           <p className="draft-card__warning">
                             <Icon name="alert" size={12} />
                             {draft.warnings[0]}
                           </p>
+                        )}
+                        {openQuestions > 0 && (
+                          <ClarifyQuestions
+                            draft={draft}
+                            onOption={onAnswerOption}
+                            onCustom={onAnswerCustom}
+                          />
                         )}
                         {draft.source.excerpt && (
                           <blockquote>{draft.source.excerpt}</blockquote>
                         )}
                       </div>
                     </article>
-                  ))}
+                    )
+                  })}
                 </div>
               </>
             )}
@@ -257,7 +290,11 @@ export function Inspector({
 
           {!parsing && drafts.length > 0 && (
             <div className="inspector__foot">
-              <p>还没有写入。取消勾选，或直接加入。</p>
+              <p>
+                {incompleteCount > 0
+                  ? `${incompleteCount} 条还差开始/结束/地点，补齐后才能写入。`
+                  : '还没有写入。取消勾选，或直接加入。'}
+              </p>
               <button
                 className="primary-button"
                 onClick={onConfirm}

@@ -1,6 +1,26 @@
 export type EventCategory = 'work' | 'life' | 'health' | 'focus' | 'other'
 export type EventStatus = 'confirmed' | 'tentative'
 export type SourceKind = 'text' | 'image' | 'manual'
+export type Attendance = 'unknown' | 'required' | 'optional' | 'not_required'
+export type ClarifyField = 'start' | 'end' | 'location' | 'attendance' | 'title' | 'other'
+
+export interface ClarifyOption {
+  id: string
+  label: string
+  /** Raw answer used by the app: ISO time, location text, or attendance enum. */
+  value?: string
+}
+
+export interface ClarifyQuestion {
+  id: string
+  field: ClarifyField
+  prompt: string
+  options: ClarifyOption[]
+  allowCustom: boolean
+  customPlaceholder?: string
+  selectedOptionId?: string
+  answer?: string
+}
 
 export interface EventSource {
   kind: SourceKind
@@ -15,12 +35,14 @@ export interface ScheduleEvent {
   end: string | null
   allDay: boolean
   timezone: string
-  location?: string
+  /** Required for a confirmed event. May be "待定" when the user explicitly chooses it. */
+  location: string
   notes?: string
   /** YYYY-MM-DD, for tasks without a concrete time. */
   deadline?: string
   category: EventCategory
   status: EventStatus
+  attendance: Attendance
   source: EventSource
   confidence: number
   warnings: string[]
@@ -33,6 +55,7 @@ export interface ScheduleEvent {
 
 export interface DraftEvent extends ScheduleEvent {
   selected: boolean
+  questions: ClarifyQuestion[]
 }
 
 export interface ScheduleDocument {
@@ -49,6 +72,7 @@ export interface AppSettings {
   githubOwner: string
   githubRepo: string
   githubBranch: string
+  githubClientId: string
   theme: 'dark' | 'light'
 }
 

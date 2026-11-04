@@ -1,66 +1,32 @@
-# 阑珊时刻 · Lanshan Moments
+# 阑珊时刻
 
 > 把散落的时间，收拢成一条看得见的光带。  
 > 一段话、一张截图、一篇备忘 → AI 整理成统一日程 JSON → 落在时间轴上。
 
-![桌面端：整理稿与时间轴](./docs/assets/desktop-review.png)
+![桌面端：本周概览](./docs/assets/v0.2/week.png)
 
-**当前状态：v0.1 可行性 Demo。** 这不是一个已经完成的产品，而是一个可以运行、可以点击、可以验证核心体验的原型。正式版会使用 SQLite、原生通知/小组件、系统钥匙串，并把同步做成可选增强。
+**v0.2.0 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
 
 技术判断、排期与风险见 [可行性分析](./docs/feasibility.md)；界面与交互取舍见 [前端设计讨论](./docs/frontend-design.md)；数据协议见 [数据模型](./docs/data-model.md)。
 
 ---
 
-## 它解决什么
+## 这一版新增
 
-时间信息通常不是日历条目的形状：
-
-- 群里的一段通知
-- 一张课程表/会议截图
-- 文章里的一句“月底前交材料”
-- 语音转文字后的一团文本
-
-现有日历要求你先想清楚标题、开始、结束、提醒，再手动录入。阑珊时刻把顺序反过来：
-
-1. **先丢进来**：文字、图片、拖拽、粘贴。
-2. **AI 出草稿**：拆出多个事件，保留原文片段，标出不确定处。
-3. **你确认**：逐条勾选/取消；低置信度不偷偷写入。
-4. **写入时间轴**：日/周视图、当前时间线、待安排。
-5. **同步到自己的 GitHub 私有仓库**：零服务器，本地优先。
-
-设计原则只有一条：**AI 是编辑，不是权威。**
+- **本周概览**：七列看完整周；每个日程都显示开始–结束时间、标题、地点；待安排单独列出。
+- **墨辰视觉**：纯黑白灰、液态玻璃、日间/夜间双主题；桌面四栏和移动端都按同一套设计令牌重做。
+- **日程必填**：开始时间、结束时间、地点。确认写入前会校验；地点可以明确选择“待定”。
+- **AI 澄清问题**：当地点未知、持续时间不确定、或“是否需要参加”不明确时，AI 会生成可点选项，并保留“其他（自己输入）”输入框。
+- **图形化 GitHub 连接**：支持 GitHub OAuth Device Flow（设备码授权）和图形化访问令牌向导；自动读取私有仓库、创建 `lanshan-schedule`。
+- **原生壳**：Windows Wails v2（`release/lanshan.exe`）、Android Capacitor 8（debug APK）。
+- **Android 通知**：日程开始前 10 分钟本地提醒；提供精确闹钟授权入口，适配 ColorOS 后台限制。
+- **多语言预留**：简体中文文案集中；`src/i18n.ts` 提供语言键与回退，新增模块使用局部 `COPY` 对象。
 
 ---
 
-## 现在能做什么
+## 快速开始（网页版）
 
-- ✅ 中文文本解析：相对日期（本周五/下周三）、时间范围（下午 3 点到 4 点半）、地点、时长、截止日期、待安排
-- ✅ 图片入口：拖拽/粘贴/选择；配置视觉模型后随文字一起发给模型（未配置时会明确提示）
-- ✅ AI 接口：任意 OpenAI Chat Completions 兼容端点（DeepSeek / OpenAI / 通义 / Ollama 等），BYOK
-- ✅ 无 Key 也能用：内置离线规则解析，保证 Demo 可演示
-- ✅ 整理稿：置信度、警告、原文引用、逐条勾选、批量写入、撤销
-- ✅ 时间轴：日视图 + 周条、重叠列、当前时间线、待安排、事件详情、软删除
-- ✅ JSON：`schedule.json` 实时预览、复制、下载、导入/导出
-- ✅ GitHub 同步：私有仓库 + fine-grained PAT，事件级合并、墓碑、SHA 冲突重试
-- ✅ 深/浅主题、桌面四栏、移动端抽屉与底部导航
-- ✅ PWA manifest + 离线 shell 缓存（生产构建）
-- ✅ 响应式 + 键盘快捷键（`N` 聚焦录入，`Ctrl/Cmd + Enter` 解析，`Esc` 关闭）
-
-### 刻意没做
-
-- ❌ 原生通知 / 桌面小组件 / 精确闹钟（需要 Tauri/Capacitor 壳）
-- ❌ 真实 OCR 兜底、复杂表格/手写识别
-- ❌ 重复事件、拖拽改期、时区选择器
-- ❌ E2EE、团队协作、系统日历双向同步
-- ❌ iOS/macOS/HarmonyOS 上架
-
-这些不是遗漏，而是为了先验证“录入 → 确认 → 时间轴”这条主链路。
-
----
-
-## 快速开始
-
-需要 Node.js 22+（开发时使用 Node 24）。
+需要 Node.js 22+。
 
 ```bash
 npm install
@@ -68,52 +34,95 @@ npm run dev
 # http://localhost:5173
 ```
 
-生产构建：
+不配置任何 Key 的演示路径：
 
-```bash
+1. 点输入框下方的「示例」。
+2. 点圆形「↑」。
+3. 右侧出现 4 条草稿；其中“和小林吃饭”会追问结束时间，“周会”会追问是否参加。
+4. 回答选项、取消“护照续签”后点「写入时间轴」。
+5. 点顶部「本周」查看整周；点「JSON」查看统一格式。
+
+---
+
+## Windows 端
+
+已构建的便携版在 [GitHub Releases](https://github.com/sinsine/lanshan-moments/releases) 提供（Wails v2 + WebView2，约 14 MB）。本地构建脚本：`scripts/build-windows.ps1`。
+
+手动构建：
+
+```powershell
 npm run build
-npm run preview
+wails build -s -skipbindings -clean -webview2 embed
+# 输出：build/bin/lanshan.exe
 ```
 
-### 不配置任何 Key 的演示路径
+要求：Go 1.26+、Wails v2.17+、WebView2 Runtime。项目路径包含中文时，建议在 ASCII 路径（例如 `C:\dev\lanshan`）下构建；`main.go` 使用 `//go:embed all:dist`。
 
-1. 打开页面，点击输入框下方的「示例」。
-2. 点右下角圆形「↑」。
-3. 右侧出现 4 条草稿：周会、和小林吃饭、产品评审、护照续签（待安排）。
-4. 取消/勾选任意条目，点「写入时间轴」。
-5. 切到「JSON」看统一格式；点事件打开详情；试试删除后“撤销”。
+Windows 端使用 Go 原生代理访问 GitHub Device Flow，绕过 WebView 的 CORS 限制。
 
-示例文本是动态相对日期（本周五/下周三/月底），所以换一天运行也不会全是过去时间。
+---
 
-### 配置 AI
+## Android 端
 
-设置 → 模型接口：
+已构建的调试包在 [GitHub Releases](https://github.com/sinsine/lanshan-moments/releases) 提供。本地构建脚本：`scripts/build-android.ps1`。
 
-- 接口地址：例如 `https://api.deepseek.com/v1`
-- 模型：例如 `deepseek-chat`
-- API Key：只保存在本次会话（`sessionStorage`）
+手动重新构建：
 
-图片输入需要支持视觉的模型（例如 `gpt-4o-mini`、`qwen-vl-max`）。若浏览器直连遇到 CORS，请换桌面端/自建代理；公开 Demo 不内置任何厂商密钥。
+```powershell
+# 需要 JDK 21（Capacitor 8 要求）、Android SDK 36、platform-tools
+$env:JAVA_HOME="C:\path\to\jdk21"
+$env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
+npm run build
+npx cap sync android
+cd android
+.\gradlew.bat assembleDebug
+# 输出：android\app\build\outputs\apk\debug\app-debug.apk
+```
 
-想试图片路径，可以拖入 [这张示例图](./docs/assets/sample-schedule-image.png)；它和示例文本表达的是同一组安排。
+测试机：**一加 Ace 6T / ColorOS 16（Android 16）**。USB 调试 + USB 安装后：
 
-> 安全提示：这是原型。生产版会把 Key 放进系统钥匙串，并通过原生 HTTP 发起请求。不要把真实 Key 提交到仓库。
+```powershell
+adb install -r release\lanshan-debug.apk
+```
 
-### 配置 GitHub 同步
+ColorOS 额外设置（不设置会出现“通知不响/后台被杀”）：
+
+- 设置 → 通知与状态栏 → 应用通知管理 → 阑珊时刻：允许通知、横幅、锁屏。
+- 设置 → 电池 → 更多设置 → 应用耗电管理 → 阑珊时刻：允许完全后台行为、允许自启动。
+- 设置 → 应用 → 特殊应用权限 → 闹钟和提醒：允许。
+- 最近任务里给阑珊时刻加锁。
+
+提醒在应用设置 → 提醒中开启；系统限制下不能保证 100% 准点，未授权精确闹钟时会提示可能延迟。
+
+---
+
+## GitHub 连接（网页授权）
+
+“用 GitHub 网页登录”使用 **OAuth Device Flow**：点击后打开 GitHub 授权页，输入设备码即可，不需要把 client secret 放进客户端。
+
+首次需要创建一个 OAuth App（约 2 分钟）：
+
+1. 打开 GitHub → Settings → Developer settings → OAuth Apps → **New OAuth App**。
+2. Application name 填 `阑珊时刻`；Homepage URL 填 `https://github.com/sinsine/lanshan-moments`。
+3. Authorization callback URL 可填同一个地址（Device Flow 不使用它，但 GitHub 要求填写）。
+4. 创建后复制 **Client ID**，粘贴到「设置 → 多设备同步 → OAuth App Client ID」，保存。
+5. 点击「用 GitHub 网页登录」→ 复制设备码 → 在 GitHub 页面确认 → 选择/新建私有仓库。
+
+也可以把 Client ID 写进 `.env`：
+
+```bash
+VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
+```
+
+> 浏览器 PWA 受 CORS 限制，无法直接调用 GitHub 设备码接口；网页版请使用“访问令牌”。Windows/Android 原生壳通过 Go / CapacitorHttp 代理，可以完成网页授权。客户端永远不需要 client secret。
+
+### 访问令牌兜底
 
 1. 新建一个 **私有** 仓库（例如 `lanshan-schedule`）。
 2. 创建 [fine-grained PAT](https://github.com/settings/personal-access-tokens/new)，只勾选该仓库的 **Contents: Read and write**。
-3. 设置 → 多设备同步：填用户名、仓库名、分支、Token。
-4. 点「验证并同步」。首次会创建 `schedule.json`；另一台设备填同样的仓库/Token，再同步。
+3. 在 GitHub 连接弹窗选择「使用访问令牌」，粘贴并验证，选择仓库后连接。
 
-同步是事件级合并，不是“远端覆盖本地”。删除使用墓碑；冲突会重拉、合并、重试。完整协议见 [data-model.md](./docs/data-model.md)。
-
-### 发布 Demo 到 GitHub Pages
-
-1. 把仓库推到 GitHub（公开仓库）。
-2. Settings → Pages → Source 选 **GitHub Actions**。
-3. push 到 `main` 后，[deploy.yml](./.github/workflows/deploy.yml) 会构建并发布 `dist/`。
-4. 打开 `https://<user>.github.io/<repo>/`。Vite 使用相对路径，子路径部署不需要改配置。
+同步是事件级合并，不是“远端覆盖本地”；删除使用墓碑，SHA 冲突会重拉、合并、重试。完整协议见 [data-model.md](./docs/data-model.md)。
 
 ---
 
@@ -121,81 +130,77 @@ npm run preview
 
 | 桌面 · 深色 | 桌面 · 浅色 |
 |---|---|
-| ![深色](./docs/assets/desktop-review.png) | ![浅色](./docs/assets/desktop-light.png) |
+| ![深色](./docs/assets/v0.2/desktop-day.png) | ![浅色](./docs/assets/v0.2/desktop-light.png) |
 
-| 移动端 · 时间轴 | 移动端 · 核对 |
+| 移动端 · 时间轴 | 移动端 · 本周 |
 |---|---|
-| ![移动端时间轴](./docs/assets/mobile-timeline.png) | ![移动端核对](./docs/assets/mobile-review.png) |
+| ![移动端时间轴](./docs/assets/v0.2/mobile-day.png) | ![移动端本周](./docs/assets/v0.2/mobile-week.png) |
 
-JSON 视图：
-
-![JSON 视图](./docs/assets/json-view.png)
+| 整理稿与 AI 追问 | GitHub 图形化连接 |
+|---|---|
+| ![整理稿](./docs/assets/v0.2/review.png) | ![GitHub](./docs/assets/v0.2/github.png) |
 
 ---
 
 ## 技术栈
 
-| 层 | Demo | 生产建议 |
-|---|---|---|
-| UI | React 19 + TypeScript + Vite 8 | 保持；或按团队偏好换 Preact/Solid |
-| 样式 | 原生 CSS + design tokens | 保持；不引入重型 UI 框架 |
-| 本地存储 | localStorage | IndexedDB（PWA）/ SQLite（原生） |
-| AI | OpenAI Chat Completions 兼容接口，BYOK | 原生 HTTP + 系统钥匙串；可选代理 |
-| 同步 | GitHub Contents API，单 `schedule.json` | 事件级合并；量大后按月分片 / Git Data API |
-| 桌面 | — | Tauri 2（Windows/macOS） |
-| Android/iOS | — | Capacitor 8 + Kotlin/Swift 插件 |
-| HarmonyOS | — | 先 PWA；后 ArkTS 壳 |
+| 层 | 实现 |
+|---|---|
+| UI | React 19 + TypeScript + Vite 8 |
+| 样式 | 原生 CSS + 墨辰黑白玻璃 design tokens |
+| 本地存储 | localStorage（Demo）；生产迁移 IndexedDB / SQLite |
+| AI | OpenAI Chat Completions 兼容接口，BYOK；`temperature=0.1`，JSON 输出 |
+| 同步 | GitHub Contents API，单 `schedule.json`，事件级 LWW + 墓碑 |
+| Windows | Wails v2 + Go + WebView2；原生 GitHub HTTP 代理 |
+| Android | Capacitor 8 + JDK 21 + SDK 36；Local Notifications |
+| 通知 | `@capacitor/local-notifications`，提前 10 分钟；精确闹钟授权入口 |
+| 多语言 | 简体中文；`src/i18n.ts` + 模块级 COPY，预留语言包 |
 
 ```
 .
-├── docs/                 # 可行性、设计、数据模型
-├── public/               # favicon / manifest
+├── android/              # Capacitor Android 工程
+├── build/                # Wails 图标/清单
+├── docs/                 # 可行性、设计、数据模型、截图
+├── public/               # PWA manifest / 图标 / service worker
 ├── schema/               # 统一日程 JSON Schema
+├── scripts/              # 构建脚本（后续补）
 ├── src/
-│   ├── components/       # Capture / Timeline / Inspector / Settings / EventDialog
-│   ├── lib/              # ai / parser / date / sync / storage
-│   ├── App.tsx
-│   ├── index.css         # design tokens + 布局
-│   └── types.ts
-└── .github/workflows/    # GitHub Pages 部署
+│   ├── components/       # 采集/时间轴/本周/整理稿/GitHub/设置
+│   ├── lib/              # ai / parser / clarify / sync / notifications
+│   ├── i18n.ts
+│   └── App.tsx
+├── app.go / main.go      # Wails Go 壳
+├── capacitor.config.ts
+└── release/              # 本地构建产物（不提交，随 Release 上传）
 ```
 
 ---
 
-## 路线图
+## 版本与发布
 
-| 版本 | 目标 |
-|---|---|
-| v0.1（当前） | 可行性 Demo：文本/图片 → 草稿 → 时间轴 → JSON → GitHub 同步 |
-| v0.2 | Windows（Tauri）+ Android（Capacitor）壳；本地 SQLite；通知；系统钥匙串 |
-| v0.3 | GitHub 同步打磨（E2EE 可选、冲突 UI、月分片）；离线队列；导入/导出 |
-| v0.4 | Android 桌面小组件 + 精确闹钟；iOS WidgetKit；移动端分享入口 |
-| v1.0 | 上架/签名、引导、隐私政策、无障碍、英文界面；评估 WebDAV/S3 |
+- `v0.1.0`：可行性 Demo（Web）。
+- `v0.2.0`：本周概览、墨辰视觉、AI 追问、必填校验、GitHub 图形化连接、Windows / Android 初版。
 
-细节和决策门槛见 [可行性分析](./docs/feasibility.md)。
+每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
+
+---
+
+## 已知限制
+
+- 网页版 GitHub Device Flow 受 CORS 限制，只能走访问令牌；Windows/Android 原生端可用网页授权。
+- Android 桌面小组件尚未实现；本地通知与精确闹钟授权已接入。
+- 精确闹钟受 ColorOS/Android 后台策略影响，不能承诺 100% 准点。
+- 重复事件、拖拽改期、时区选择器、E2EE 尚未进入 1.0。
+- 图片解析需要支持视觉的模型；未配置时明确提示，不假装 OCR。
 
 ---
 
 ## 安全与隐私
 
-- 公开仓库不包含任何真实日程、Token、API Key；示例数据全部虚构。
-- Demo 的 API Key 与 GitHub Token 只放 `sessionStorage`，关闭标签页即清除。
-- 生产版使用 fine-grained PAT（仅 Contents R/W）与系统钥匙串。
-- 同步是可选的；默认体验是单机可用。没有“必须登录”的墙。
-- 日程是敏感数据。是否启用 E2EE、是否把原文发给模型，必须由用户明确选择。
-
----
-
-## 参与
-
-这是一个早期项目，欢迎从这些问题开始讨论：
-
-- GitHub 私有仓库作为同步方式，对首批用户是否太重？
-- 默认视图应该是“今天”还是“本周”？
-- 哪些重复事件/系统日历场景是必须进 1.0 的？
-- Android 小组件、精确闹钟、iOS WidgetKit，哪个先做？
-
-提交 Issue 前请先读 [可行性分析](./docs/feasibility.md) 的“非目标”和 [前端设计讨论](./docs/frontend-design.md) 的开放问题。
+- 公开仓库不包含真实日程、Token、API Key；示例数据全部虚构。
+- API Key 与 GitHub Token 在网页端只放 `sessionStorage`；原生端后续迁移系统钥匙串。
+- fine-grained PAT 只申请目标私有仓库的 Contents 读写；OAuth 只使用公开 Client ID。
+- 同步可选；默认单机可用。日程敏感，是否把原文发给模型必须由用户选择。
 
 ---
 

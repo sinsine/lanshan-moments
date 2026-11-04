@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  Attendance,
   AttachedImage,
   DraftEvent,
   EventCategory,
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   githubOwner: '',
   githubRepo: 'lanshan-schedule',
   githubBranch: 'main',
+  githubClientId: '',
   theme: 'dark',
 }
 
@@ -69,7 +71,11 @@ export function loadEvents(): ScheduleEvent[] | null {
     if (raw === null) return null
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return null
-    return parsed.filter(isScheduleEvent)
+    return parsed.filter(isScheduleEvent).map((event) => ({
+      ...event,
+      location: event.location ?? '',
+      attendance: event.attendance ?? ('unknown' as Attendance),
+    }))
   } catch {
     return null
   }
@@ -111,6 +117,7 @@ function seedEvent(
     location,
     category,
     status: 'confirmed',
+    attendance: 'required',
     source: { kind: 'manual' },
     confidence: 1,
     warnings: [],
@@ -150,8 +157,14 @@ export function draftsToEvents(drafts: DraftEvent[]): ScheduleEvent[] {
   return drafts
     .filter((draft) => draft.selected)
     .map((draft) => {
-      const { selected: _selected, ...event } = draft
-      return { ...event, status: event.warnings.length ? 'tentative' : 'confirmed' }
+      const { selected: _selected, questions: _questions, ...event } = draft
+      void _selected
+      void _questions
+      return {
+        ...event,
+        location: event.location.trim(),
+        status: event.warnings.length ? 'tentative' : 'confirmed',
+      }
     })
 }
 

@@ -1,8 +1,10 @@
 # 数据模型与同步协议
 
-> 版本：v0.1 · 2026-11-04  
+> 版本：v0.2 · 2026-11-04  
 > JSON Schema：[schema/schedule.schema.json](../schema/schedule.schema.json)  
 > 同步参考：[DarkCube](https://github.com/sinsine/DarkCube)（本地优先 + GitHub 私有仓库），但改为事件级合并。
+
+**v0.2 变更**：`location` 改为必填；新增 `attendance`；确认写入时间轴前必须有开始时间、结束时间和地点。AI 的追问选项是 UI 状态（`questions`），不写入 `schedule.json`。
 
 ---
 
@@ -19,6 +21,8 @@ DarkCube 的日记模型是“一天一篇 Markdown”，这适合日记，因�
 ---
 
 ## 2. 规范示例
+
+> 确认事件（`status=confirmed`）必须满足：`start`、`end` 非空且 `end > start`，`location` 非空。草稿（`tentative`）可以缺字段，但 UI 会阻止未补齐的草稿写入时间轴。
 
 ```json
 {
@@ -68,13 +72,14 @@ DarkCube 的日记模型是“一天一篇 Markdown”，这适合日记，因�
 | `title` | 是 | 用户可读标题，≤120 字 |
 | `start` | 是 | 带偏移的 ISO 8601；`null` = 待安排 |
 | `end` | 是 | 带偏移的 ISO 8601；`null` = 未指定/全天 |
-| `allDay` | 是 | 全天事件；此时 `start` 为当地 00:00，`end` 为 `null` |
+| `allDay` | 是 | 全天事件；此时 `start` 为当地 00:00，`end` 为次日 00:00 |
 | `timezone` | 是 | 事件语义时区；跨时区保留原时区 |
-| `location` | 否 | 地点；没有就留空，不猜 |
+| `location` | 是 | 地点；用户明确选择“待定”时也写“待定”，不能留空 |
 | `notes` | 否 | 备注，≤1000 字 |
 | `deadline` | 否 | `YYYY-MM-DD`，用于“只有截止日期”的任务 |
 | `category` | 是 | `work` / `life` / `health` / `focus` / `other` |
 | `status` | 是 | `confirmed` / `tentative`；AI 草稿默认 tentative |
+| `attendance` | 是 | `required` / `optional` / `not_required` / `unknown`；由 AI 追问或用户选择 |
 | `source` | 是 | `kind` + 原文片段；不存整张图片 |
 | `confidence` | 是 | 0–1；仅表示解析把握，不是事实正确概率 |
 | `warnings` | 是 | 面向用户的中文提示；可为空数组 |
@@ -84,7 +89,30 @@ DarkCube 的日记模型是“一天一篇 Markdown”，这适合日记，因�
 | `deviceId` | 是 | 最后编辑设备 |
 | `rev` | 是 | 设备内修订号；用于审计/调试 |
 
-### 2.2 时间语义
+### 2.2 AI 澄清问题（UI 状态，不持久化）
+
+AI 可以在草稿上生成最多 3 个问题，每个问题都有可点选项和自由输入：
+
+```json
+{
+  "id": "q_...",
+  "field": "end",
+  "prompt": "预计什么时候结束？",
+  "options": [
+    { "id": "end_60", "label": "1 小时（20:00 结束）", "value": "2026-11-08T20:00:00+08:00" },
+    { "id": "end_90", "label": "1.5 小时（20:30 结束）", "value": "2026-11-08T20:30:00+08:00" }
+  ],
+  "allowCustom": true,
+  "customPlaceholder": "输入结束时间，例如：16:30 或 1.5 小时",
+  "answer": "1 小时（20:00 结束）"
+}
+```
+
+- 只有 `field` 为 `start` / `end` / `location` 的问题会阻止写入时间轴；`attendance` 可以暂不回答。
+- 用户点选后，答案会写回事件的 `start` / `end` / `location` / `attendance`，`questions` 只留在本地草稿里，不进同步 JSON。
+- 解析器推测出的默认结束时间（例如没有写时长时按 1 小时）仍然会生成 `end` 问题；不回答就不算确认。
+
+### 2.3 时间语义
 
 - **带偏移**：`2026-11-11T15:00:00+08:00` 表示上海时间 15:00。不要存无偏移的本地时间。
 - **全天**：`start` 为当地 00:00，`end` 为 `null`；`allDay=true`。全天事件跨时区时仍按“当地日期”理解。

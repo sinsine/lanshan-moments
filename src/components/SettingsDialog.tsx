@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { AppSettings } from '../types'
 import { Icon } from './Icons'
 
-type SettingsTab = 'ai' | 'sync' | 'data'
+type SettingsTab = 'ai' | 'sync' | 'reminders' | 'data'
 
 interface SettingsDialogProps {
   settings: AppSettings
@@ -16,6 +16,11 @@ interface SettingsDialogProps {
   onExport: () => void
   onImport: (file: File) => void
   onClear: () => void
+  onOpenConnect: () => void
+  notificationsOn: boolean
+  notificationStatus: string
+  onToggleNotifications: () => void
+  onOpenExactAlarm: () => void
 }
 
 export function SettingsDialog({
@@ -30,6 +35,11 @@ export function SettingsDialog({
   onExport,
   onImport,
   onClear,
+  onOpenConnect,
+  notificationsOn,
+  notificationStatus,
+  onToggleNotifications,
+  onOpenExactAlarm,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<SettingsTab>('ai')
   const [form, setForm] = useState(settings)
@@ -80,6 +90,15 @@ export function SettingsDialog({
             type="button"
           >
             多设备同步
+          </button>
+          <button
+            className={tab === 'reminders' ? 'is-active' : ''}
+            onClick={() => setTab('reminders')}
+            role="tab"
+            aria-selected={tab === 'reminders'}
+            type="button"
+          >
+            提醒
           </button>
           <button
             className={tab === 'data' ? 'is-active' : ''}
@@ -152,6 +171,23 @@ export function SettingsDialog({
                 日程写进你自己的 GitHub 私有仓库，不经过第三方服务器。这是参考 DarkCube 的 local-first
                 方案，但改为事件级合并，不再让远端覆盖本地。
               </p>
+              <button
+                className="github-connect-banner"
+                type="button"
+                onClick={() => {
+                  save()
+                  onOpenConnect()
+                }}
+              >
+                <span className="github-connect-banner__mark">
+                  <Icon name="github" size={21} />
+                </span>
+                <span className="github-connect-banner__text">
+                  <strong>{githubToken ? '已连接 GitHub，换一个仓库' : '用 GitHub 网页登录'}</strong>
+                  <small>图形化授权 / 自动读取私有仓库 / 一键创建同步仓库</small>
+                </span>
+                <Icon name="arrow-right" size={17} />
+              </button>
               <div className="field-grid">
                 <label className="field">
                   <span>GitHub 用户名</span>
@@ -194,10 +230,20 @@ export function SettingsDialog({
                   />
                 </label>
               </div>
+              <label className="field">
+                <span>OAuth App Client ID（可选，开发者配置）</span>
+                <input
+                  value={form.githubClientId}
+                  onChange={(event) => set('githubClientId', event.target.value)}
+                  placeholder="Iv1.xxxxxxxxxxxxxxxx"
+                  spellCheck={false}
+                />
+                <small>填入后，“用 GitHub 网页登录”会启用设备码授权；client secret 不会进入客户端。</small>
+              </label>
               <div className="notice">
                 <Icon name="keyboard" size={15} />
                 <p>
-                  只勾选该仓库的 <strong>Contents: Read and write</strong> 即可。Token
+                  手动 Token 只勾选该仓库的 <strong>Contents: Read and write</strong> 即可。Token
                   同样只存于本次会话。仓库里会生成 <code>schedule.json</code>。
                 </p>
               </div>
@@ -216,6 +262,40 @@ export function SettingsDialog({
                 </button>
                 {syncMessage && <span className="sync-row__message">{syncMessage}</span>}
               </div>
+            </>
+          )}
+
+          {tab === 'reminders' && (
+            <>
+              <p className="settings-lede">
+                在日程开始前 10 分钟提醒。Android 端会申请通知权限；ColorOS 还需要允许后台行为和自启动，提醒才稳定。
+              </p>
+              <div className="reminder-card">
+                <div className="reminder-card__text">
+                  <strong>日程提醒</strong>
+                  <small>当前设备：Android / iOS 原生端可用，网页版不可用</small>
+                </div>
+                <button
+                  className={`switch ${notificationsOn ? 'switch--on' : ''}`}
+                  type="button"
+                  role="switch"
+                  aria-checked={notificationsOn}
+                  onClick={onToggleNotifications}
+                >
+                  <span />
+                </button>
+              </div>
+              <div className="notice">
+                <Icon name="clock" size={15} />
+                <p>
+                  若需要“准点响铃”，还需要在系统设置里授予<strong>闹钟和提醒</strong>权限。没有授权时，系统可能把提醒延后。
+                </p>
+              </div>
+              <button className="ghost-button" type="button" onClick={onOpenExactAlarm}>
+                <Icon name="settings" size={15} />
+                打开系统精确闹钟设置
+              </button>
+              {notificationStatus && <p className="sync-row__message">{notificationStatus}</p>}
             </>
           )}
 

@@ -60,6 +60,15 @@ export function EventDialog({ event, onClose, onDelete }: EventDialogProps) {
           <div className="event-dialog__meta">
             <span>把握 {Math.round(event.confidence * 100)}%</span>
             <span>{event.status === 'tentative' ? '待确认' : '已确认'}</span>
+            <span>
+              {event.attendance === 'not_required'
+                ? '无需参加'
+                : event.attendance === 'optional'
+                  ? '可选参加'
+                  : event.attendance === 'required'
+                    ? '需要参加'
+                    : '参加情况待定'}
+            </span>
             <span>rev {event.rev}</span>
           </div>
           {event.warnings.length > 0 && (
