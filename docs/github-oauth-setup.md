@@ -16,18 +16,26 @@
 | Application name | `阑珊时刻` |
 | Homepage URL | `https://github.com/sinsine/lanshan-moments` |
 | Application description | `AI 日程整理与跨设备时间轴`（可选） |
-| Authorization callback URL | `https://github.com/sinsine/lanshan-moments` |
+| Redirect URI | `https://github.com/sinsine/lanshan-moments` |
 
-说明：Device Flow 不使用 callback URL，但 GitHub 要求必须填；填项目主页即可。
+说明：新版 GitHub 把 callback 字段改成了 **Redirect URIs**。Device Flow 不使用它，但 GitHub 要求至少填一个；填项目主页即可。如果当前行是空的，直接在 `Redirect URI` 输入框里粘贴；如果输入框不可编辑，先点右上角 **Add redirect URI**。
 
-点 **Register application**。
+![第一步：填 Redirect URI、勾选 Device Flow、取消过期令牌、注册](assets/oauth-step1-annotated.png)
 
-## 2. 勾选 Device Flow（最关键）
+**同时确认：**
 
-创建成功后会进入 OAuth App 的详情页：
+- 勾选 **Enable Device Flow**（图里的 2）。
+- **取消勾选** **Expire user access tokens**（图里的 3）。当前版本还没有做 refresh token，勾选它会让登录在约 8 小时后失效；后续实现 refresh 后再开启。
+- `Allow wildcard matching` 不用勾。
 
-1. 找到 **Enable Device Flow** 复选框。
-2. 勾选它。
+然后点 **Register application**（图里的 4）。
+
+## 2. 确认 Device Flow 已开启
+
+如果注册前已经勾选 **Enable Device Flow**，创建成功后的详情页应该会显示为已开启。若发现没勾上：
+
+1. 回到 OAuth App 详情页。
+2. 勾选 **Enable Device Flow**。
 3. 点页面底部的 **Update application**。
 
 如果不勾选，应用调用 `https://github.com/login/device/code` 会被 GitHub 拒绝。
