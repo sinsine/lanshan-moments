@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "阑珊时刻日程文档",
+  "description": "本地优先的日程文档。时间戳为 ISO 8601；同步使用事件级最后写入者胜出（LWW）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "timezone", "updatedAt", "deviceId", "events"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "timezone": {
+      "type": "string",
+      "description": "文档的默认 IANA 时区，例如 Asia/Shanghai。",
+      "minLength": 1
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "文档最后更新时间，UTC ISO 8601。"
+    },
+    "deviceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "生成此文档的设备标识，用于同步决胜。"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "$defs": {
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "start",
+        "end",
+        "allDay",
+        "timezone",
+        "category",
+        "status",
+        "source",
+        "confidence",
+        "warnings",
+        "createdAt",
+        "updatedAt",
+        "deletedAt",
+        "deviceId",
+        "rev"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "稳定 ID，创建后不变；建议 evt_ + UUID。"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "start": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "带时区偏移的开始时间；null 表示待安排。"
+        },
+        "end": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "带时区偏移的结束时间；null 表示未指定。"
+        },
+        "allDay": {
+          "type": "boolean"
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "description": "事件语义时区。跨时区时保留原时区。"
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "deadline": {
+          "type": ["string", "null"],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "只有截止日期、没有具体时间的任务。"
+        },
+        "category": {
+          "enum": ["work", "life", "health", "focus", "other"]
+        },
+        "status": {
+          "enum": ["confirmed", "tentative"]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "enum": ["text", "image", "manual"]
+            },
+            "excerpt": {
+              "type": "string",
+              "maxLength": 160,
+              "description": "逐字来源片段，用于追溯，不存整张图片。"
+            }
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "每次编辑递增；同步合并的主要依据。"
+        },
+        "deletedAt": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "软删除墓碑；非 null 时不再显示，但仍参与同步。"
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "本设备上的编辑修订号，用于审计/调试。"
+        }
+      }
+    }
+  }
+}
