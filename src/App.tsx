@@ -752,6 +752,7 @@ export default function App() {
     onOpenSettings: () => setSettingsOpen(true),
   }
 
+  const detachedPanel = new URLSearchParams(window.location.search).get('panel')
   const layout = initialWindowLayout()
   const topNavWindows = [
     { id: 'timeline' as const, label: windowLabel('timeline'), visible: panelVisible.timeline },
@@ -779,6 +780,79 @@ export default function App() {
     const next = { ...settings, theme: nextTheme }
     setSettings(next)
     saveSettings(next)
+  }
+
+  if (detachedPanel) {
+    const closeDetached = () => {
+      void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(() => undefined)
+      window.close()
+    }
+    const content =
+      detachedPanel === 'week' ? (
+        <WeekOverview
+          events={liveEvents}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onOpenDay={(date) => {
+            setSelectedDate(date)
+            setViewMode('day')
+          }}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      ) : detachedPanel === 'timeline' ? (
+        <Timeline
+          events={liveEvents}
+          drafts={drafts}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onAdd={openCapture}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      ) : detachedPanel === 'inbox' ? (
+        <Inspector
+          drafts={drafts}
+          document={scheduleDoc}
+          tab={tab}
+          onTab={setTab}
+          onToggle={handleToggleDraft}
+          onSelectAll={handleSelectAll}
+          onAnswerOption={handleAnswerOption}
+          onAnswerCustom={handleAnswerCustom}
+          onConfirm={handleConfirm}
+          onCopy={handleCopyJson}
+          onDownload={handleExport}
+          parsing={parsing}
+          stage={stage}
+          engineLabel={engineLabel}
+        />
+      ) : (
+        <CapturePanel {...captureProps} />
+      )
+    return (
+      <div className="detached-shell">
+        <header className="detached-head">
+          <span>{windowLabel(detachedPanel)}</span>
+          <button type="button" onClick={closeDetached} aria-label="关闭独立窗口">
+            <Icon name="x" size={14} />
+          </button>
+        </header>
+        <div className="detached-content">{content}</div>
+      </div>
+    )
   }
 
   return (
@@ -1251,5 +1325,6 @@ export default function App() {
     </div>
   )
 }
+
 
 

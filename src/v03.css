@@ -370,3 +370,60 @@
 .window-frame--floating {
   border-radius: var(--radius-l);
 }
+
+.detached-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.detached-head {
+  --wails-draggable: drag;
+  display: flex;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--glass-bg);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.detached-head button {
+  --wails-draggable: no-drag;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--faint);
+}
+
+.detached-head button:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-strong);
+}
+
+.detached-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detached-content > .week-overview,
+.detached-content > .timeline,
+.detached-content > .inspector,
+.detached-content > .capture {
+  flex: 1;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
