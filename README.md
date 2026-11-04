@@ -108,8 +108,11 @@ ColorOS 额外设置（不设置会出现“通知不响/后台被杀”）：
 1. 打开 GitHub → Settings → Developer settings → OAuth Apps → **New OAuth App**。
 2. Application name 填 `阑珊时刻`；Homepage URL 填 `https://github.com/sinsine/lanshan-moments`。
 3. Authorization callback URL 可填同一个地址（Device Flow 不使用它，但 GitHub 要求填写）。
-4. 创建后复制 **Client ID**，粘贴到「设置 → 多设备同步 → OAuth App Client ID」，保存。
-5. 点击「用 GitHub 网页登录」→ 复制设备码 → 在 GitHub 页面确认 → 选择/新建私有仓库。
+4. 创建后进入应用页，勾选 **Enable Device Flow**，点 **Update application**。这一步不能漏，否则设备码接口不可用。
+5. 复制页面上的 **Client ID**（不是 Client secret），粘贴到「设置 → 多设备同步 → OAuth App Client ID」，保存。
+6. 点击「用 GitHub 网页登录」→ 复制设备码 → 在 GitHub 页面确认 → 选择/新建私有仓库。
+
+详细图文步骤：[GitHub OAuth 手把手配置](./docs/github-oauth-setup.md)。
 
 也可以把 Client ID 写进 `.env`：
 
