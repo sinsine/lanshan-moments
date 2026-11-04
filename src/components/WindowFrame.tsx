@@ -9,6 +9,7 @@ export interface WindowFrameProps {
   initial: { x: number; y: number; width: number; height: number }
   zIndex: number
   floating?: boolean
+  onDetach?: () => void
   onFocus: () => void
   onClose: () => void
   children: ReactNode
@@ -149,6 +150,7 @@ export function WindowFrame({
   initial,
   zIndex,
   floating = false,
+  onDetach,
   onFocus,
   onClose,
   children,
@@ -196,6 +198,20 @@ export function WindowFrame({
           <span className="window-frame__bar-title" title={title}>
             {title}
           </span>
+          {onDetach ? (
+            <button
+              type="button"
+              className="window-frame__close"
+              aria-label={`把${title}放到独立窗口`}
+              title="放到独立窗口"
+              onClick={(event) => {
+                event.stopPropagation()
+                onDetach()
+              }}
+            >
+              <Icon name="external" size={13} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="window-frame__close"

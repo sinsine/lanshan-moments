@@ -219,6 +219,18 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'lanshan.attach' || !event.newValue) return
+      const panel = event.newValue
+      setPanelVisible((current) => ({ ...current, [panel]: true }))
+      bringWindowToFront(panel)
+      localStorage.removeItem('lanshan.attach')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
     saveEvents(events)
   }, [events])
 
@@ -466,6 +478,14 @@ export default function App() {
     setGithubDialogOpen(true)
   }
 
+  const detachPanel = (id: string) => {
+    void fetch(`/api/detach?panel=${encodeURIComponent(id)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`native bridge ${response.status}`)
+        setPanelVisible((current) => ({ ...current, [id]: false }))
+      })
+      .catch(() => notify('独立窗口仅支持 Wails v3 桌面壳', { tone: 'error' }))
+  }
   const bringWindowToFront = (id: string) => {
     setZCounter((current) => {
       const next = current + 1
@@ -784,6 +804,7 @@ export default function App() {
 
   if (detachedPanel) {
     const closeDetached = () => {
+      localStorage.setItem('lanshan.attach', detachedPanel)
       void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(() => undefined)
       window.close()
     }
@@ -894,6 +915,7 @@ export default function App() {
               icon={<Icon name="plus" size={15} />}
               initial={layout.capture}
               zIndex={windowZ.capture}
+              onDetach={() => detachPanel('capture')}
               onFocus={() => bringWindowToFront('capture')}
               onClose={() => setPanelVisible((current) => ({ ...current, capture: false }))}
             >
@@ -908,6 +930,7 @@ export default function App() {
               icon={<Icon name="grid" size={15} />}
               initial={layout.week}
               zIndex={windowZ.week}
+              onDetach={() => detachPanel('week')}
               onFocus={() => bringWindowToFront('week')}
               onClose={() => setPanelVisible((current) => ({ ...current, week: false }))}
             >
@@ -938,6 +961,7 @@ export default function App() {
               icon={<Icon name="calendar" size={15} />}
               initial={layout.timeline}
               zIndex={windowZ.timeline}
+              onDetach={() => detachPanel('timeline')}
               onFocus={() => bringWindowToFront('timeline')}
               onClose={() => setPanelVisible((current) => ({ ...current, timeline: false }))}
             >
@@ -966,6 +990,7 @@ export default function App() {
               icon={<Icon name="inbox" size={15} />}
               initial={layout.inbox}
               zIndex={windowZ.inbox}
+              onDetach={() => detachPanel('inbox')}
               onFocus={() => bringWindowToFront('inbox')}
               onClose={() => setPanelVisible((current) => ({ ...current, inbox: false }))}
             >
@@ -1325,6 +1350,9 @@ export default function App() {
     </div>
   )
 }
+
+
+
 
 
 
