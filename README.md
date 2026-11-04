@@ -1,11 +1,11 @@
-﻿# 阑珊时刻
+# 阑珊时刻
 
 > 把散落的时间，收拢成一条看得见的光带。  
 > 一段话、一张截图、一篇备忘 → AI 整理成统一日程 JSON → 落在时间轴上。
 
 ![桌面端：本周概览](./docs/assets/v0.2/week.png)
 
-**v0.2.0 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
+**v0.2.1 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
 
 在线 Demo：<https://sinsine.github.io/lanshan-moments/>
 最新安装包：[GitHub Releases](https://github.com/sinsine/lanshan-moments/releases)
@@ -183,6 +183,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 
 - `v0.1.0`：可行性 Demo（Web）。
 - `v0.2.0`：本周概览、墨辰视觉、AI 追问、必填校验、GitHub 图形化连接、Windows / Android 初版。
+- `v0.2.1`：ColorOS 16 / Android 16 安全区修正，版本号同步。
 
 每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
 
@@ -210,4 +211,5 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## License
 
 [MIT](./LICENSE)
+
 

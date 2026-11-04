@@ -27,7 +27,7 @@ func (a *App) startup(ctx context.Context) {
 
 // Version is exposed to the web UI as a small native health check.
 func (a *App) Version() string {
-	return "0.2.0"
+	return "0.2.1"
 }
 
 // HTTPResponse is the small envelope returned to the WebView.
@@ -96,3 +96,4 @@ func (a *App) OpenExternal(rawURL string) error {
 	wailsruntime.BrowserOpenURL(a.ctx, rawURL)
 	return nil
 }
+
