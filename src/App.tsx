@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import type {
   AppSettings,
   AttachedImage,
@@ -150,6 +150,7 @@ export default function App() {
   })
   const [, setZCounter] = useState(6)
   const [layoutEpoch, setLayoutEpoch] = useState(0)
+  const [nativeV3, setNativeV3] = useState(false)
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -228,6 +229,13 @@ export default function App() {
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
+    void fetch('/api/health')
+      .then((response) => response.json())
+      .then((payload: { native?: boolean }) => setNativeV3(Boolean(payload.native)))
+      .catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -900,10 +908,19 @@ export default function App() {
           onOpenSyncSettings={openGithubConnect}
           theme={settings.theme}
           onToggleTheme={toggleTheme}
-          nativeWindow={Boolean(nativeBridge)}
-          onMinimize={() => nativeBridge?.WindowMinimise?.()}
-          onMaximize={() => nativeBridge?.WindowToggleMaximise?.()}
-          onCloseWindow={handleExit}
+          nativeWindow={Boolean(nativeBridge) || nativeV3}
+          onMinimize={() => {
+            if (nativeV3) void fetch('/api/window/minimize')
+            else nativeBridge?.WindowMinimise?.()
+          }}
+          onMaximize={() => {
+            if (nativeV3) void fetch('/api/window/maximize')
+            else nativeBridge?.WindowToggleMaximise?.()
+          }}
+          onCloseWindow={() => {
+            if (nativeV3) void fetch('/api/window/close')
+            else handleExit()
+          }}
         />
 
         <div className="window-workspace">
@@ -1350,6 +1367,7 @@ export default function App() {
     </div>
   )
 }
+
 
 
 
