@@ -185,6 +185,20 @@ export function WindowFrame({
         }}
         resizeHandleClasses={resizeHandleClasses}
         onDragStart={() => setIsFloating(true)}
+        onDragStop={(event, data) => {
+          const parent = (event.target as HTMLElement).parentElement
+          const width = parent?.clientWidth ?? window.innerWidth
+          const height = parent?.clientHeight ?? window.innerHeight
+          if (
+            onDetach &&
+            (data.x + 60 < 0 ||
+              data.y + 40 < 0 ||
+              data.x > width - 60 ||
+              data.y > height - 40)
+          ) {
+            onDetach()
+          }
+        }}
         onClick={onFocus}
         role="dialog"
         aria-label={title}
