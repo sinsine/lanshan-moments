@@ -5,7 +5,7 @@
 
 ![桌面端：本周概览](./docs/assets/v0.2/week.png)
 
-**v0.2.1 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
+**v0.2.2 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
 
 在线 Demo：GitHub Pages 首次部署正在队列中；完成前请本地 `npm run dev`，或直接下载 Windows / Android 安装包。  
 最新安装包：[GitHub Releases](https://github.com/sinsine/lanshan-moments/releases)
@@ -109,7 +109,7 @@ ColorOS 额外设置（不设置会出现“通知不响/后台被杀”）：
 2. Application name 填 `阑珊时刻`；Homepage URL 填 `https://github.com/sinsine/lanshan-moments`。
 3. **Redirect URI** 填同一个地址；如果输入框不可编辑，先点 **Add redirect URI**。
 4. 勾选 **Enable Device Flow**；**取消勾选** **Expire user access tokens**（当前版本尚未实现 refresh token）。
-5. 点 **Register application**。进入应用页后确认 Device Flow 已开启，再复制 **Client ID**（不是 Client secret）。
+5. 点 **Register application**。进入应用页后确认 Device Flow 已开启，再复制 **Client ID**（不是 Client secret）。当前安装包已内置该 Client ID，普通用户不需要自己创建 OAuth App。
 6. 粘贴到「设置 → 多设备同步 → OAuth App Client ID」，保存。
 7. 点击「用 GitHub 网页登录」→ 复制设备码 → 在 GitHub 页面确认 → 选择/新建私有仓库。
 
@@ -188,6 +188,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 - `v0.1.0`：可行性 Demo（Web）。
 - `v0.2.0`：本周概览、墨辰视觉、AI 追问、必填校验、GitHub 图形化连接、Windows / Android 初版。
 - `v0.2.1`：ColorOS 16 / Android 16 安全区修正，版本号同步。
+- `v0.2.2`：内置公开 Client ID；已验证 GitHub 设备码接口。
 
 每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
 
@@ -215,5 +216,6 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## License
 
 [MIT](./LICENSE)
+
 
 

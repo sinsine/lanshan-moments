@@ -10,6 +10,7 @@ import type {
 } from './types'
 import { addDays, dateKey, formatTime, startOfDay } from './lib/date'
 import { t } from './i18n'
+import { DEFAULT_GITHUB_CLIENT_ID } from './lib/config'
 import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
 import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
@@ -108,7 +109,9 @@ export default function App() {
 
   const hasAiKey = apiKey.trim().length > 0
   const githubClientId =
-    settings.githubClientId || (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || ''
+    settings.githubClientId.trim() ||
+    (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) ||
+    DEFAULT_GITHUB_CLIENT_ID
   const syncConnected = Boolean(
     settings.githubOwner && settings.githubRepo && githubToken,
   )

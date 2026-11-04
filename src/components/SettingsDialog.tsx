@@ -235,10 +235,10 @@ export function SettingsDialog({
                 <input
                   value={form.githubClientId}
                   onChange={(event) => set('githubClientId', event.target.value)}
-                  placeholder="Iv1.xxxxxxxxxxxxxxxx"
+                  placeholder="留空使用内置 Client ID"
                   spellCheck={false}
                 />
-                <small>填入后，“用 GitHub 网页登录”会启用设备码授权；client secret 不会进入客户端。</small>
+                <small>留空使用应用内置的公开 Client ID；填自己的可覆盖。client secret 不会进入客户端。</small>
               </label>
               <div className="notice">
                 <Icon name="keyboard" size={15} />
