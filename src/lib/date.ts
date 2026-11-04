@@ -152,3 +152,14 @@ export function relativeDayLabel(dayKey: string, today = new Date()): string {
 export function isPastDay(dayKey: string, today = new Date()): boolean {
   return parseDateKey(dayKey) < startOfDay(today)
 }
+
+/** ISO week number, used by the mobile timetable header. */
+export function isoWeekNumber(date: Date): number {
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const day = (target.getDay() + 6) % 7
+  target.setDate(target.getDate() - day + 3)
+  const firstThursday = new Date(target.getFullYear(), 0, 4)
+  const firstDay = (firstThursday.getDay() + 6) % 7
+  firstThursday.setDate(firstThursday.getDate() - firstDay + 3)
+  return 1 + Math.round((target.getTime() - firstThursday.getTime()) / 604_800_000)
+}

@@ -3,9 +3,14 @@
 > 把散落的时间，收拢成一条看得见的光带。  
 > 一段话、一张截图、一篇备忘 → AI 整理成统一日程 JSON → 落在时间轴上。
 
-![桌面端：本周概览](./docs/assets/v0.2/week.png)
+![桌面端：顶部菜单与浮动窗口](./docs/assets/v0.3/desktop.png)
 
-**v0.2.2 · Windows / Android 初版。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；新增本周概览、AI 澄清选项、必填时间/地点校验、图形化 GitHub 连接，以及 Wails Windows 壳和 Capacitor Android 壳。
+**v0.3.0 · 顶部菜单与可拖拽窗口。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；桌面端改为 AE 式顶部菜单和可自由拖拽的浮动窗口；手机端改为课程表式周视图；模型接口支持提供商预设、获取并选择模型，API Key 保存在本机。
+
+<p>
+  <img src="./docs/assets/v0.3/mobile-week.png" alt="手机端周表" width="300" />
+  <img src="./docs/assets/v0.3/mobile-day.png" alt="手机端时间轴" width="300" />
+</p>
 
 在线 Demo：GitHub Pages 首次部署正在队列中；完成前请本地 `npm run dev`，或直接下载 Windows / Android 安装包。  
 最新安装包：[GitHub Releases](https://github.com/sinsine/lanshan-moments/releases)
@@ -16,14 +21,16 @@
 
 ## 这一版新增
 
-- **本周概览**：七列看完整周；每个日程都显示开始–结束时间、标题、地点；待安排单独列出。
-- **墨辰视觉**：纯黑白灰、液态玻璃、日间/夜间双主题；桌面四栏和移动端都按同一套设计令牌重做。
-- **日程必填**：开始时间、结束时间、地点。确认写入前会校验；地点可以明确选择“待定”。
-- **AI 澄清问题**：当地点未知、持续时间不确定、或“是否需要参加”不明确时，AI 会生成可点选项，并保留“其他（自己输入）”输入框。
-- **图形化 GitHub 连接**：支持 GitHub OAuth Device Flow（设备码授权）和图形化访问令牌向导；自动读取私有仓库、创建 `lanshan-schedule`。
-- **原生壳**：Windows Wails v2（`release/lanshan.exe`）、Android Capacitor 8（debug APK）。
-- **Android 通知**：日程开始前 10 分钟本地提醒；提供精确闹钟授权入口，适配 ColorOS 后台限制。
-- **多语言预留**：简体中文文案集中；`src/i18n.ts` 提供语言键与回退，新增模块使用局部 `COPY` 对象。
+- **桌面顶部菜单**：取消左侧导航，改为 应用 / 编辑 / 窗口 三个菜单，风格跟随日间/夜间主题。
+- **可拖拽窗口**：添加日程、周概览、时间轴、整理箱默认铺满工作区；窗口可自由拖动、缩放、重叠，点击置顶，关闭后可从「窗口」菜单重新打开。设置也是浮动窗口。
+- **应用菜单**：关于阑珊时刻、关于作者、检查更新（读取 GitHub Releases）、退出。
+- **编辑菜单**：撤销、重做、剪切、复制、粘贴、删除、全选，带快捷键提示。
+- **窗口菜单**：时间轴、周概览、整理箱、添加日程、设置，全部为开关。
+- **手机端周表**：类似课程表的七列周视图，顶部周切换，底部三个栏目：周表 / 时间轴 / 我的。
+- **手机状态栏**：Android 启动后隐藏状态栏；移除点击按钮时的蓝色高亮和焦点框。
+- **模型接口**：DeepSeek（默认）、OpenAI、通义千问、Moonshot、智谱、SiliconFlow、OpenRouter、Gemini、Ollama 预设；点「获取模型」从 `/models` 拉取并点选。
+- **API Key 本地保存**：改存本机 `localStorage`，关闭应用后仍保留。
+- **延续**：本周概览独立、AI 澄清选项、开始/结束/地点必填、图形化 GitHub Device Flow、Android 本地通知、多语言预留。
 
 ---
 
@@ -189,6 +196,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 - `v0.2.0`：本周概览、墨辰视觉、AI 追问、必填校验、GitHub 图形化连接、Windows / Android 初版。
 - `v0.2.1`：ColorOS 16 / Android 16 安全区修正，版本号同步。
 - `v0.2.2`：内置公开 Client ID；已验证 GitHub 设备码接口。
+- `v0.3.0`：顶部菜单、自由浮动窗口、手机周表、状态栏隐藏、模型预设/获取模型/Key 本地保存。
 
 每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
 
@@ -207,7 +215,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## 安全与隐私
 
 - 公开仓库不包含真实日程、Token、API Key；示例数据全部虚构。
-- API Key 与 GitHub Token 在网页端只放 `sessionStorage`；原生端后续迁移系统钥匙串。
+- API Key 按用户要求保存在本机 `localStorage`，关闭应用后仍保留；GitHub Token 仍只放 `sessionStorage`。原生端后续会把两者迁移到系统钥匙串。
 - fine-grained PAT 只申请目标私有仓库的 Contents 读写；OAuth 只使用公开 Client ID。
 - 同步可选；默认单机可用。日程敏感，是否把原文发给模型必须由用户选择。
 

@@ -48,12 +48,12 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function loadApiKey(): string {
-  return sessionStorage.getItem(API_KEY) ?? ''
+  return localStorage.getItem(API_KEY) ?? ''
 }
 
 export function saveApiKey(key: string): void {
-  if (key) sessionStorage.setItem(API_KEY, key)
-  else sessionStorage.removeItem(API_KEY)
+  if (key) localStorage.setItem(API_KEY, key)
+  else localStorage.removeItem(API_KEY)
 }
 
 export function loadGithubToken(): string {

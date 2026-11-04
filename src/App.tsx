@@ -8,9 +8,13 @@ import type {
   ScheduleDocument,
   ScheduleEvent,
 } from './types'
-import { addDays, dateKey, formatTime, startOfDay } from './lib/date'
-import { t } from './i18n'
-import { DEFAULT_GITHUB_CLIENT_ID } from './lib/config'
+import { addDays, dateKey, formatTime, startOfDay, weekdayCN } from './lib/date'
+import { AUTHOR_URL, DEFAULT_GITHUB_CLIENT_ID, REPO_URL } from './lib/config'
+import { checkLatestRelease, type UpdateInfo } from './lib/update'
+import { openExternal } from './lib/native'
+import { TopNav } from './components/TopNav'
+import { WindowFrame } from './components/WindowFrame'
+import { MobileWeekGrid } from './components/MobileWeekGrid'
 import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
 import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
@@ -46,7 +50,7 @@ import { Inspector } from './components/Inspector'
 import { SettingsDialog } from './components/SettingsDialog'
 import { GitHubConnectDialog } from './components/GitHubConnectDialog'
 import { EventDialog } from './components/EventDialog'
-import { Icon, LogoMark } from './components/Icons'
+import { Icon } from './components/Icons'
 
 type InspectorTab = 'drafts' | 'json'
 type MobileSheet = 'capture' | 'review' | null
@@ -76,6 +80,48 @@ function isMobile(): boolean {
   return window.matchMedia('(max-width: 980px)').matches
 }
 
+function initialWindowLayout() {
+  const width = Math.max(980, window.innerWidth)
+  const height = Math.max(640, window.innerHeight - 44)
+  const gap = 8
+  const left = Math.min(390, Math.max(330, width * 0.27))
+  const middle = width - left - gap * 3
+  const upper = (height - gap * 3) * 0.46
+  const weekHeight = (height - gap * 3) * 0.38
+  return {
+    capture: { x: gap, y: gap, width: left, height: upper },
+    inbox: { x: gap, y: gap * 2 + upper, width: left, height: height - upper - gap * 3 },
+    week: { x: gap * 2 + left, y: gap, width: middle, height: weekHeight },
+    timeline: {
+      x: gap * 2 + left,
+      y: gap * 2 + weekHeight,
+      width: middle,
+      height: height - weekHeight - gap * 3,
+    },
+    settings: {
+      x: Math.max(24, (width - 780) / 2),
+      y: Math.max(20, (height - 700) / 2),
+      width: Math.min(780, width - 48),
+      height: Math.min(720, height - 40),
+    },
+  }
+}
+
+function windowLabel(id: string): string {
+  switch (id) {
+    case 'timeline':
+      return '时间轴'
+    case 'week':
+      return '周概览'
+    case 'inbox':
+      return '整理箱'
+    case 'capture':
+      return '添加日程'
+    default:
+      return '设置'
+  }
+}
+
 export default function App() {
   const [deviceId] = useState(getDeviceId)
   const [events, setEvents] = useState<ScheduleEvent[]>(() => {
@@ -86,7 +132,21 @@ export default function App() {
   const [apiKey, setApiKey] = useState(loadApiKey)
   const [githubToken, setGithubToken] = useState(loadGithubToken)
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
-  const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
+  const [viewMode, setViewMode] = useState<'day' | 'week'>('week')
+  const [panelVisible, setPanelVisible] = useState({
+    timeline: true,
+    week: true,
+    inbox: true,
+    capture: true,
+  })
+  const [windowZ, setWindowZ] = useState<Record<string, number>>({
+    capture: 1,
+    week: 2,
+    timeline: 3,
+    inbox: 4,
+    settings: 5,
+  })
+  const [, setZCounter] = useState(6)
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -96,6 +156,11 @@ export default function App() {
   const [engineLabel, setEngineLabel] = useState('离线规则')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
+  const [updateDialog, setUpdateDialog] = useState<{
+    checking: boolean
+    info?: UpdateInfo
+    error?: string
+  } | null>(null)
   const [activeEventId, setActiveEventId] = useState<string | null>(null)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [toast, setToast] = useState<ToastState>(null)
@@ -392,6 +457,102 @@ export default function App() {
     setGithubDialogOpen(true)
   }
 
+  const bringWindowToFront = (id: string) => {
+    setZCounter((current) => {
+      const next = current + 1
+      setWindowZ((z) => ({ ...z, [id]: next }))
+      return next
+    })
+  }
+
+  const toggleWindow = (id: string) => {
+    if (id === 'settings') {
+      if (!settingsOpen) bringWindowToFront('settings')
+      setSettingsOpen((current) => !current)
+      return
+    }
+    const next = !panelVisible[id as keyof typeof panelVisible]
+    if (next) bringWindowToFront(id)
+    setPanelVisible((current) => ({ ...current, [id]: next }))
+  }
+
+  const runEditAction = async (
+    action: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'delete' | 'selectAll',
+  ) => {
+    const element = document.activeElement as
+      | HTMLInputElement
+      | HTMLTextAreaElement
+      | null
+    const editable =
+      element &&
+      (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')
+    if (!editable) {
+      if (action === 'copy') {
+        const selected = window.getSelection()?.toString() ?? ''
+        if (selected) {
+          await navigator.clipboard.writeText(selected).catch(() => undefined)
+          notify('已复制选中文字')
+        } else {
+          notify('请先在输入框或正文中选中文字')
+        }
+      } else {
+        notify('请先把光标放进输入框')
+      }
+      return
+    }
+    if (action === 'paste') {
+      try {
+        const text = await navigator.clipboard.readText()
+        const start = element.selectionStart ?? element.value.length
+        const end = element.selectionEnd ?? start
+        element.setRangeText(text, start, end, 'end')
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+      } catch {
+        notify('浏览器不允许读取剪贴板，请用 Ctrl+V', { tone: 'error' })
+      }
+      return
+    }
+    const commandMap = {
+      undo: 'undo',
+      redo: 'redo',
+      cut: 'cut',
+      copy: 'copy',
+      delete: 'delete',
+      selectAll: 'selectAll',
+    } as const
+    const ok = document.execCommand(commandMap[action])
+    if (!ok && action !== 'copy') notify('这个编辑命令当前不可用', { tone: 'error' })
+  }
+
+  const handleCheckUpdates = async () => {
+    setUpdateDialog({ checking: true })
+    try {
+      const info = await checkLatestRelease()
+      setUpdateDialog({ checking: false, info })
+    } catch (error) {
+      setUpdateDialog({
+        checking: false,
+        error: error instanceof Error ? error.message : '检查更新失败',
+      })
+    }
+  }
+
+  const handleExit = () => {
+    const bridge = (
+      window as unknown as {
+        go?: { main?: { App?: { Quit?: () => void } } }
+      }
+    ).go?.main?.App
+    if (bridge?.Quit) {
+      bridge.Quit()
+      return
+    }
+    window.close()
+    window.setTimeout(() => {
+      if (!window.closed) notify('浏览器不允许直接退出，请关闭标签页')
+    }, 300)
+  }
+
   const handleToggleNotifications = async () => {
     if (notificationsOn) {
       await clearNotifications().catch(() => undefined)
@@ -573,205 +734,314 @@ export default function App() {
     onOpenSettings: () => setSettingsOpen(true),
   }
 
+  const layout = initialWindowLayout()
+  const topNavWindows = [
+    { id: 'timeline' as const, label: windowLabel('timeline'), visible: panelVisible.timeline },
+    { id: 'week' as const, label: windowLabel('week'), visible: panelVisible.week },
+    { id: 'inbox' as const, label: windowLabel('inbox'), visible: panelVisible.inbox },
+    { id: 'capture' as const, label: windowLabel('capture'), visible: panelVisible.capture },
+    { id: 'settings' as const, label: windowLabel('settings'), visible: settingsOpen },
+  ]
+
+  const openCapture = () => {
+    if (isMobile()) {
+      setMobileSheet('capture')
+      return
+    }
+    setPanelVisible((current) => ({ ...current, capture: true }))
+    window.setTimeout(() => {
+      document
+        .querySelector<HTMLTextAreaElement>('.window-frame .capture textarea')
+        ?.focus()
+    }, 60)
+  }
+
+  const toggleTheme = () => {
+    const nextTheme: AppSettings['theme'] = settings.theme === 'dark' ? 'light' : 'dark'
+    const next = { ...settings, theme: nextTheme }
+    setSettings(next)
+    saveSettings(next)
+  }
+
   return (
-    <div className={`app-shell ${viewMode === 'week' ? 'app-shell--week' : ''}`}>
+    <div className="app-shell app-shell--v3">
       <div className="liquid-bg" aria-hidden="true">
         <span className="blob blob-1" />
         <span className="blob blob-2" />
         <span className="blob blob-3" />
       </div>
-      <aside className="rail">
-        <button
-          className="rail__brand"
-          onClick={() => setSelectedDate(startOfDay(new Date()))}
-          title="阑珊时刻"
-          type="button"
-        >
-          <LogoMark size={28} />
-        </button>
-        <nav className="rail__nav" aria-label="主导航">
-          <button
-            className={`rail__button ${viewMode === 'day' ? 'is-active' : ''}`}
-            title="时间轴"
-            type="button"
-            onClick={() => setViewMode('day')}
-          >
-            <Icon name="calendar" size={19} />
-            <span>{t('nav.timeline')}</span>
-          </button>
-          <button
-            className={`rail__button ${viewMode === 'week' ? 'is-active' : ''}`}
-            title="本周概览"
-            type="button"
-            onClick={() => setViewMode('week')}
-          >
-            <Icon name="grid" size={19} />
-            <span>{t('nav.week')}</span>
-          </button>
-          <button
-            className="rail__button"
-            title="整理稿"
-            type="button"
-            onClick={() => {
-              setTab('drafts')
-              if (isMobile()) setMobileSheet('review')
+
+      <div className="desktop-shell">
+        <TopNav
+          windows={topNavWindows}
+          onToggleWindow={toggleWindow}
+          onOpenAbout={() => void openExternal(REPO_URL)}
+          onOpenAuthor={() => void openExternal(AUTHOR_URL)}
+          onCheckUpdates={() => void handleCheckUpdates()}
+          onExit={handleExit}
+          onEditAction={(action) => void runEditAction(action)}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+          onSync={() => void handleSync()}
+          onOpenSyncSettings={openGithubConnect}
+          theme={settings.theme}
+          onToggleTheme={toggleTheme}
+        />
+
+        <div className="window-workspace">
+          {panelVisible.capture && (
+            <WindowFrame
+              id="capture"
+              title="添加日程"
+              icon={<Icon name="plus" size={15} />}
+              initial={layout.capture}
+              zIndex={windowZ.capture}
+              onFocus={() => bringWindowToFront('capture')}
+              onClose={() => setPanelVisible((current) => ({ ...current, capture: false }))}
+            >
+              <CapturePanel {...captureProps} />
+            </WindowFrame>
+          )}
+          {panelVisible.week && (
+            <WindowFrame
+              id="week"
+              title="周概览"
+              icon={<Icon name="grid" size={15} />}
+              initial={layout.week}
+              zIndex={windowZ.week}
+              onFocus={() => bringWindowToFront('week')}
+              onClose={() => setPanelVisible((current) => ({ ...current, week: false }))}
+            >
+              <WeekOverview
+                events={liveEvents}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                onShiftWeek={shiftWeek}
+                onToday={() => setSelectedDate(startOfDay(new Date()))}
+                onEventClick={(event) => setActiveEventId(event.id)}
+                onOpenDay={(date) => {
+                  setSelectedDate(date)
+                  setViewMode('day')
+                }}
+                onSync={() => handleSync()}
+                onOpenSettings={openGithubConnect}
+                syncLabel={syncLabel}
+                syncConnected={syncConnected}
+                syncing={syncing}
+              />
+            </WindowFrame>
+          )}
+          {panelVisible.timeline && (
+            <WindowFrame
+              id="timeline"
+              title="时间轴"
+              icon={<Icon name="calendar" size={15} />}
+              initial={layout.timeline}
+              zIndex={windowZ.timeline}
+              onFocus={() => bringWindowToFront('timeline')}
+              onClose={() => setPanelVisible((current) => ({ ...current, timeline: false }))}
+            >
+              <Timeline
+                events={liveEvents}
+                drafts={drafts}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                onShiftWeek={shiftWeek}
+                onToday={() => setSelectedDate(startOfDay(new Date()))}
+                onOpenWeek={() => setPanelVisible((current) => ({ ...current, week: true }))}
+                onAdd={openCapture}
+                onEventClick={(event) => setActiveEventId(event.id)}
+                onSync={() => handleSync()}
+                onOpenSettings={openGithubConnect}
+                syncLabel={syncLabel}
+                syncConnected={syncConnected}
+                syncing={syncing}
+              />
+            </WindowFrame>
+          )}
+          {panelVisible.inbox && (
+            <WindowFrame
+              id="inbox"
+              title="整理箱"
+              icon={<Icon name="inbox" size={15} />}
+              initial={layout.inbox}
+              zIndex={windowZ.inbox}
+              onFocus={() => bringWindowToFront('inbox')}
+              onClose={() => setPanelVisible((current) => ({ ...current, inbox: false }))}
+            >
+              <Inspector
+                drafts={drafts}
+                document={scheduleDoc}
+                tab={tab}
+                onTab={setTab}
+                onToggle={handleToggleDraft}
+                onSelectAll={handleSelectAll}
+                onAnswerOption={handleAnswerOption}
+                onAnswerCustom={handleAnswerCustom}
+                onConfirm={handleConfirm}
+                onCopy={handleCopyJson}
+                onDownload={handleExport}
+                parsing={parsing}
+                stage={stage}
+                engineLabel={engineLabel}
+              />
+            </WindowFrame>
+          )}
+          {settingsOpen && (
+            <WindowFrame
+              id="settings"
+              title="设置"
+              icon={<Icon name="settings" size={15} />}
+              initial={layout.settings}
+              zIndex={windowZ.settings}
+              onFocus={() => bringWindowToFront('settings')}
+              onClose={() => setSettingsOpen(false)}
+            >
+              <SettingsDialog
+                embedded
+                settings={settings}
+                apiKey={apiKey}
+                githubToken={githubToken}
+                syncBusy={syncing}
+                syncMessage={syncMessage}
+                onClose={() => setSettingsOpen(false)}
+                onSave={handleSaveSettings}
+                onSync={(nextSettings, token) => {
+                  saveGithubToken(token)
+                  handleSync(nextSettings, token)
+                }}
+                onExport={handleExport}
+                onImport={handleImport}
+                onClear={handleClear}
+                onOpenConnect={openGithubConnect}
+                notificationsOn={notificationsOn}
+                notificationStatus={notificationStatus}
+                onToggleNotifications={handleToggleNotifications}
+                onOpenExactAlarm={handleOpenExactAlarm}
+              />
+            </WindowFrame>
+          )}
+        </div>
+      </div>
+
+      <div className={`mobile-shell mobile-shell--${viewMode}`}>
+        {viewMode === 'week' ? (
+          <MobileWeekGrid
+            events={liveEvents}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            onShiftWeek={shiftWeek}
+            onOpenDay={(date) => {
+              setSelectedDate(date)
+              setViewMode('day')
             }}
-          >
-            <Icon name="inbox" size={19} />
-            <span>{t('nav.review')}</span>
-            {drafts.length > 0 && <i className="rail__badge">{drafts.length}</i>}
-          </button>
-          <button
-            className="rail__button"
-            title="设置"
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Icon name="settings" size={19} />
-            <span>{t('nav.settings')}</span>
-          </button>
-        </nav>
-        <div className="rail__bottom">
-          <button
-            className="rail__button rail__button--icon"
-            title={settings.theme === 'dark' ? '切换到浅色' : '切换到深色'}
-            type="button"
-            onClick={() =>
-              setSettings((current) => ({
-                ...current,
-                theme: current.theme === 'dark' ? 'light' : 'dark',
-              }))
-            }
-          >
-            <Icon name={settings.theme === 'dark' ? 'sun' : 'moon'} size={18} />
-            <span>{settings.theme === 'dark' ? t('nav.light') : t('nav.dark')}</span>
-          </button>
-          <span className="rail__version">v0.1</span>
-        </div>
-      </aside>
+            onEventClick={(event) => setActiveEventId(event.id)}
+            onAdd={() => setMobileSheet('capture')}
+          />
+        ) : (
+          <>
+            <header className="mobile-head mobile-head--v3">
+              <button
+                className="mobile-head__plus"
+                onClick={() => setMobileSheet('capture')}
+                aria-label="添加日程"
+                type="button"
+              >
+                <Icon name="plus" size={22} />
+              </button>
+              <button
+                className="mobile-head__title"
+                onClick={() => setViewMode('week')}
+                type="button"
+              >
+                <span>
+                  {selectedDate.getMonth() + 1}月{selectedDate.getDate()}日{' '}
+                  {weekdayCN(selectedDate)}
+                </span>
+                <Icon name="chevron-down" size={14} />
+              </button>
+              <div className="mobile-head__actions">
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    setTab('drafts')
+                    setMobileSheet('review')
+                  }}
+                  aria-label="整理箱"
+                  type="button"
+                >
+                  <span className="mobile-nav__icon-wrap">
+                    <Icon name="inbox" size={18} />
+                    {drafts.length > 0 && <i>{drafts.length}</i>}
+                  </span>
+                </button>
+                <button
+                  className={`icon-button ${syncConnected ? 'is-synced' : ''}`}
+                  onClick={() => (syncConnected ? handleSync() : openGithubConnect())}
+                  aria-label="同步"
+                  type="button"
+                >
+                  <Icon name={syncConnected ? 'cloud' : 'cloud-off'} size={18} />
+                </button>
+              </div>
+            </header>
 
-      <CapturePanel {...captureProps} />
+            <Timeline
+              events={liveEvents}
+              drafts={drafts}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              onShiftWeek={shiftWeek}
+              onToday={() => setSelectedDate(startOfDay(new Date()))}
+              onOpenWeek={() => setViewMode('week')}
+              onAdd={() => setMobileSheet('capture')}
+              onEventClick={(event) => setActiveEventId(event.id)}
+              onSync={() => handleSync()}
+              onOpenSettings={openGithubConnect}
+              syncLabel={syncLabel}
+              syncConnected={syncConnected}
+              syncing={syncing}
+            />
+          </>
+        )}
 
-      {viewMode === 'day' ? (
-        <Timeline
-          events={liveEvents}
-          drafts={drafts}
-          selectedDate={selectedDate}
-          onSelectDate={setSelectedDate}
-          onShiftWeek={shiftWeek}
-          onToday={() => setSelectedDate(startOfDay(new Date()))}
-          onOpenWeek={() => setViewMode('week')}
-          onAdd={() => {
-            if (isMobile()) setMobileSheet('capture')
-            else
-              document
-                .querySelector<HTMLTextAreaElement>('.capture:not(.capture--compact) textarea')
-                ?.focus()
-          }}
-          onEventClick={(event) => setActiveEventId(event.id)}
-          onSync={() => handleSync()}
-          onOpenSettings={openGithubConnect}
-          syncLabel={syncLabel}
-          syncConnected={syncConnected}
-          syncing={syncing}
-        />
-      ) : (
-        <WeekOverview
-          events={liveEvents}
-          selectedDate={selectedDate}
-          onSelectDate={setSelectedDate}
-          onShiftWeek={shiftWeek}
-          onToday={() => setSelectedDate(startOfDay(new Date()))}
-          onEventClick={(event) => setActiveEventId(event.id)}
-          onOpenDay={(date) => {
-            setSelectedDate(date)
-            setViewMode('day')
-          }}
-          onSync={() => handleSync()}
-          onOpenSettings={openGithubConnect}
-          syncLabel={syncLabel}
-          syncConnected={syncConnected}
-          syncing={syncing}
-        />
-      )}
-
-      <Inspector
-        drafts={drafts}
-        document={scheduleDoc}
-        tab={tab}
-        onTab={setTab}
-        onToggle={handleToggleDraft}
-        onSelectAll={handleSelectAll}
-        onAnswerOption={handleAnswerOption}
-        onAnswerCustom={handleAnswerCustom}
-        onConfirm={handleConfirm}
-        onCopy={handleCopyJson}
-        onDownload={handleExport}
-        parsing={parsing}
-        stage={stage}
-        engineLabel={engineLabel}
-      />
-
-      <header className="mobile-head">
         <button
-          className="mobile-head__brand"
-          onClick={() => setSelectedDate(startOfDay(new Date()))}
-          type="button"
-        >
-          <LogoMark size={24} />
-          <span>阑珊时刻</span>
-        </button>
-        <div className="mobile-head__actions">
-          <button
-            className={`icon-button ${syncConnected ? 'is-synced' : ''}`}
-            onClick={() => (syncConnected ? handleSync() : openGithubConnect())}
-            aria-label="同步"
-            type="button"
-          >
-            <Icon name={syncConnected ? 'cloud' : 'cloud-off'} size={18} />
-          </button>
-          <button
-            className="icon-button"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="设置"
-            type="button"
-          >
-            <Icon name="settings" size={18} />
-          </button>
-        </div>
-      </header>
-
-      <nav className="mobile-nav" aria-label="移动端导航">
-        <button className="is-active" type="button">
-          <Icon name="calendar" size={19} />
-          <span>{t('nav.timeline')}</span>
-        </button>
-        <button
+          className="mobile-inbox-fab"
           type="button"
           onClick={() => {
             setTab('drafts')
             setMobileSheet('review')
           }}
+          aria-label="打开整理箱"
         >
-          <span className="mobile-nav__icon-wrap">
-            <Icon name="inbox" size={19} />
-            {drafts.length > 0 && <i>{drafts.length}</i>}
-          </span>
-          <span>{t('nav.review')}</span>
+          <Icon name="inbox" size={17} />
+          {drafts.length > 0 && <i>{drafts.length}</i>}
         </button>
-        <button
-          className="mobile-nav__capture"
-          type="button"
-          onClick={() => setMobileSheet('capture')}
-          aria-label="记录时间"
-        >
-          <Icon name="plus" size={22} />
-        </button>
-        <button type="button" onClick={() => setSettingsOpen(true)}>
-          <Icon name="settings" size={19} />
-          <span>{t('nav.settings')}</span>
-        </button>
-      </nav>
+
+        <nav className="mobile-nav mobile-nav--three" aria-label="移动端导航">
+          <button
+            className={viewMode === 'week' ? 'is-active' : ''}
+            type="button"
+            onClick={() => setViewMode('week')}
+          >
+            <Icon name="grid" size={19} />
+            <span>周表</span>
+          </button>
+          <button
+            className={viewMode === 'day' ? 'is-active' : ''}
+            type="button"
+            onClick={() => setViewMode('day')}
+          >
+            <Icon name="calendar" size={19} />
+            <span>时间轴</span>
+          </button>
+          <button type="button" onClick={() => setSettingsOpen(true)}>
+            <Icon name="settings" size={19} />
+            <span>我的</span>
+          </button>
+        </nav>
+      </div>
 
       {mobileSheet === 'capture' && (
         <div className="sheet-backdrop" onMouseDown={() => setMobileSheet(null)}>
@@ -818,7 +1088,7 @@ export default function App() {
         </div>
       )}
 
-      {settingsOpen && (
+      {settingsOpen && isMobile() && (
         <SettingsDialog
           settings={settings}
           apiKey={apiKey}
@@ -840,6 +1110,73 @@ export default function App() {
           onToggleNotifications={handleToggleNotifications}
           onOpenExactAlarm={handleOpenExactAlarm}
         />
+      )}
+
+      {updateDialog && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => {
+            if (!updateDialog.checking) setUpdateDialog(null)
+          }}
+        >
+          <div
+            className="update-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="检查更新"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="update-dialog__head">
+              <div>
+                <p className="eyebrow">检查更新</p>
+                <h2>阑珊时刻</h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setUpdateDialog(null)}
+                aria-label="关闭"
+                type="button"
+              >
+                <Icon name="x" size={18} />
+              </button>
+            </header>
+            <div className="update-dialog__body">
+              {updateDialog.checking && <p>正在读取 GitHub Releases…</p>}
+              {updateDialog.error && <p className="model-error">{updateDialog.error}</p>}
+              {updateDialog.info && (
+                <>
+                  <p>
+                    当前版本 <strong>v{updateDialog.info.current}</strong>
+                  </p>
+                  <p>
+                    最新版本 <strong>v{updateDialog.info.latest}</strong>
+                  </p>
+                  <p className="update-dialog__hint">
+                    {updateDialog.info.isNewer
+                      ? '发现新版本。下载新安装包后覆盖安装即可，本地日程不会被清空。'
+                      : '已经是最新版本。'}
+                  </p>
+                </>
+              )}
+            </div>
+            <footer className="update-dialog__foot">
+              <button className="text-button" type="button" onClick={() => setUpdateDialog(null)}>
+                关闭
+              </button>
+              {updateDialog.info?.isNewer && (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    void openExternal(updateDialog.info!.url)
+                  }}
+                >
+                  打开下载页
+                </button>
+              )}
+            </footer>
+          </div>
+        </div>
       )}
 
       {githubDialogOpen && (

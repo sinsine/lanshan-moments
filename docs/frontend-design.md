@@ -440,7 +440,7 @@ Demo 里保留百分比，是为了让评审看到模型不确定性；正式版
 - 桌面四栏 + 移动端周条/底栏/抽屉。
 - 文字/示例/图片入口（图片需配置视觉模型）。
 - 离线规则解析（4 条示例，含相对日期、时间范围、地点、截止日期）。
-- AI 兼容接口（OpenAI Chat Completions，BYOK，sessionStorage）。
+- AI 兼容接口（OpenAI Chat Completions，BYOK，v0.3 起按用户要求存 localStorage）。
 - 草稿勾选、置信度、警告、原文引用、批量写入、撤销。
 - 日/周时间轴、重叠列、当前时间线、待安排、事件详情、软删除。
 - `schedule.json` 视图、复制/下载、导入/导出。
