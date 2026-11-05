@@ -1,11 +1,11 @@
-# 阑珊时刻
+﻿# 阑珊时刻
 
 > 把散落的时间，收拢成一条看得见的光带。  
 > 一段话、一张截图、一篇备忘 → AI 整理成统一日程 JSON → 落在时间轴上。
 
 ![桌面端：顶部菜单与浮动窗口](./docs/assets/v0.3/desktop.png)
 
-**v0.3.1 · 顶部菜单与可拖拽窗口。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；桌面端改为 AE 式顶部菜单和可自由拖拽的浮动窗口；手机端改为课程表式周视图；模型接口支持提供商预设、获取并选择模型，API Key 保存在本机。截图使用临时示例数据；安装后默认不附带演示日程。
+**v0.4.0 · Wails v3 平铺多窗口。** 采用墨辰（DarkCube）同款黑白液态玻璃视觉，日间/夜间双主题；桌面端改为 AE 式顶部菜单、自动铺满的平铺窗口与独立原生窗口；手机端改为课程表式周视图；模型接口支持提供商预设、获取并选择模型，API Key 保存在本机。截图使用临时示例数据；安装后默认不附带演示日程。
 
 <p>
   <img src="./docs/assets/v0.3/mobile-week.png" alt="手机端周表" width="300" />
@@ -33,6 +33,21 @@
 - **延续**：本周概览独立、AI 澄清选项、开始/结束/地点必填、图形化 GitHub Device Flow、Android 本地通知、多语言预留。
 
 ---
+
+## Windows v0.4 构建
+
+v0.4 的桌面壳在 `v4shell/`（Wails v3），构建前先把前端产物复制进去：
+
+```powershell
+npm run build
+Remove-Item -Recurse -Force v4shell/dist -ErrorAction SilentlyContinue
+Copy-Item dist v4shell/dist -Recurse
+Push-Location v4shell
+go build -o lanshan-v4.exe .
+Pop-Location
+```
+
+生成 `v4shell/lanshan-v4.exe`。v0.3 的 Wails v2 构建仍保留在根目录 `wails.json`。
 
 ## 快速开始（网页版）
 
@@ -198,6 +213,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 - `v0.2.2`：内置公开 Client ID；已验证 GitHub 设备码接口。
 - `v0.3.0`：顶部菜单、自由浮动窗口、手机周表、状态栏隐藏、模型预设/获取模型/Key 本地保存。
 - `v0.3.1`：401 提示、同步高级项折叠、移除时间轴本周按钮、无演示日程、登录持久化、无边框窗口。
+- `v0.4.0`：Wails v3、平铺实时回流、拖拽预览、独立原生窗口、跨窗口同步。
 
 每个版本会提交到 GitHub，并在 Releases 上传 Windows 可执行文件和 Android APK。源码提交与构建产物分开，避免仓库体积膨胀。
 
@@ -225,6 +241,8 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## License
 
 [MIT](./LICENSE)
+
+
 
 
 
