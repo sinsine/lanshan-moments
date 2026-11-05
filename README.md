@@ -43,11 +43,11 @@ npm run build
 Remove-Item -Recurse -Force v4shell/dist -ErrorAction SilentlyContinue
 Copy-Item dist v4shell/dist -Recurse
 Push-Location v4shell
-go build -o lanshan-v4.exe .
+go build -ldflags "-H windowsgui" -o lanshan-moments-0.4.1-windows-amd64.exe .
 Pop-Location
 ```
 
-生成 `v4shell/lanshan-v4.exe`。v0.3 的 Wails v2 构建仍保留在根目录 `wails.json`。
+生成 `v4shell/lanshan-moments-<version>-windows-amd64.exe`。v0.3 的 Wails v2 构建仍保留在根目录 `wails.json`。
 
 ## 快速开始（网页版）
 
@@ -107,7 +107,7 @@ cd android
 测试机：**一加 Ace 6T / ColorOS 16（Android 16）**。USB 调试 + USB 安装后：
 
 ```powershell
-adb install -r release\lanshan-debug.apk
+adb install -r release\lanshan-moments-0.4.1-android-universal.apk
 ```
 
 ColorOS 额外设置（不设置会出现“通知不响/后台被杀”）：
@@ -242,6 +242,7 @@ VITE_GITHUB_CLIENT_ID=Iv1.xxxxxxxx
 ## License
 
 [MIT](./LICENSE)
+
 
 
 

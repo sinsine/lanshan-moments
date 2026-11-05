@@ -31,6 +31,8 @@ try {
 }
 
 $apk = Join-Path $root 'android\app\build\outputs\apk\debug\app-debug.apk'
+$version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+$name = "lanshan-moments-$version-android-universal.apk"
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'release') | Out-Null
-Copy-Item $apk (Join-Path $root 'release\lanshan-debug.apk') -Force
-Write-Host "Built: $(Join-Path $root 'release\lanshan-debug.apk')"
+Copy-Item $apk (Join-Path $root "release\$name") -Force
+Write-Host "Built: $(Join-Path $root "release\$name")"
