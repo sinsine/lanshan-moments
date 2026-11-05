@@ -556,3 +556,21 @@
 .tiled-workspace {
   min-height: calc(100dvh - 68px);
 }
+
+.detached-shell .capture {
+  display: block;
+  width: 100%;
+  padding: 24px 22px;
+}
+
+.detached-shell .capture__intro h1 {
+  font-size: clamp(30px, 6vw, 54px);
+}
+
+.detached-shell .composer {
+  display: block;
+}
+
+.detached-shell .capture__intro {
+  opacity: 1;
+}
