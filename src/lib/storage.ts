@@ -18,9 +18,11 @@ const GITHUB_TOKEN = 'lanshan.github-token'
 export const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-chat',
+  thinking: 'off',
   githubOwner: '',
   githubRepo: 'lanshan-schedule',
   githubBranch: 'main',
+  githubAvatar: '',
   githubClientId: '',
   theme: 'light',
 }
@@ -38,6 +40,9 @@ export function loadSettings(): AppSettings {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return DEFAULT_SETTINGS
     const merged = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) }
+    if (!['off', 'low', 'high', 'max'].includes(merged.thinking)) {
+      merged.thinking = 'off'
+    }
     if (merged.baseUrl.replace(/\/+$/, '') === 'https://api.deepseek.com/v1') {
       merged.baseUrl = 'https://api.deepseek.com'
     }

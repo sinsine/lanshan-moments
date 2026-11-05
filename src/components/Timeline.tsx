@@ -17,6 +17,7 @@ import {
 import { Icon } from './Icons'
 
 const HOUR_HEIGHT = 48
+const HORIZONTAL_HOUR_WIDTH = 92
 const START_HOUR = 8
 const END_HOUR = 23
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60
@@ -35,6 +36,7 @@ interface TimelineProps {
   syncLabel: string
   syncConnected: boolean
   syncing: boolean
+  horizontal?: boolean
 }
 
 interface Positioned {
@@ -111,6 +113,7 @@ export function Timeline({
   syncLabel,
   syncConnected,
   syncing,
+  horizontal = false,
 }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [now, setNow] = useState(() => new Date())
@@ -121,7 +124,10 @@ export function Timeline({
   }, [])
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0
+      scrollRef.current.scrollLeft = 0
+    }
   }, [selectedDate])
 
   const week = weekDays(selectedDate)
@@ -143,6 +149,50 @@ export function Timeline({
     ...previews.map((draft) => ({ ...draft, id: `preview_${draft.id}` })),
   ])
 
+  const horizontalEvents: Array<{
+    event: ScheduleEvent
+    left: number
+    width: number
+    lane: number
+  }> = (() => {
+    const items = [
+      ...dayEvents,
+      ...previews.map((draft) => ({ ...draft, id: `preview_${draft.id}` })),
+    ]
+      .filter((event) => event.start)
+      .sort((a, b) => new Date(a.start!).getTime() - new Date(b.start!).getTime())
+    const laneEnds: number[] = []
+    return items.flatMap((event) => {
+      const rawStart = minutesOfDay(event.start!)
+      const rawEnd = rawStart + durationMinutes(event.start, event.end)
+      const start = Math.max(START_HOUR * 60, rawStart)
+      const end = Math.min(END_HOUR * 60, rawEnd)
+      if (start >= END_HOUR * 60 || end <= START_HOUR * 60) return []
+      let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start)
+      if (lane < 0) {
+        lane = laneEnds.length
+        laneEnds.push(end)
+      } else {
+        laneEnds[lane] = end
+      }
+      return [{
+        event,
+        left: ((start - START_HOUR * 60) / 60) * HORIZONTAL_HOUR_WIDTH + 18,
+        width: Math.max(
+          54,
+          ((end - start) / 60) * HORIZONTAL_HOUR_WIDTH - 7,
+        ),
+        lane,
+      }]
+    })
+  })()
+  const horizontalLaneCount = Math.max(
+    1,
+    ...horizontalEvents.map((item) => item.lane + 1),
+  )
+  const horizontalHeight = 46 + horizontalLaneCount * 44
+  const horizontalWidth = (END_HOUR - START_HOUR) * HORIZONTAL_HOUR_WIDTH + 36
+
   const nowMinutes = now.getHours() * 60 + now.getMinutes()
   const nowVisible =
     sameDay(now, selectedDate) && nowMinutes >= START_HOUR * 60 && nowMinutes <= END_HOUR * 60
@@ -154,7 +204,10 @@ export function Timeline({
   const selectedLabel = relativeDayLabel(dateKey(selectedDate), now)
 
   return (
-    <section className="timeline" aria-label="时间轴">
+    <section
+      className={`timeline ${horizontal ? 'timeline--horizontal' : ''}`}
+      aria-label="时间轴"
+    >
       <header className="timeline__header">
         <div className="timeline__title">
           <div className="timeline__month">
@@ -252,6 +305,86 @@ export function Timeline({
         </div>
       )}
 
+      {horizontal ? (
+        <div className="timeline__hwrap">
+          <div className="timeline__hscroll" ref={scrollRef}>
+            <div
+              className="timeline__hcanvas"
+              style={{ width: horizontalWidth, height: horizontalHeight }}
+            >
+              {hours.map((hour) => (
+                <div
+                  className="timeline__hhour"
+                  key={hour}
+                  style={{
+                    left: (hour - START_HOUR) * HORIZONTAL_HOUR_WIDTH + 18,
+                  }}
+                >
+                  <span>{String(hour).padStart(2, '0')}:00</span>
+                </div>
+              ))}
+
+              {horizontalEvents.map(({ event, left, width, lane }) => {
+                const isDraft = event.id.startsWith('preview_')
+                return (
+                  <button
+                    key={event.id}
+                    className={`time-event time-event--horizontal category-${event.category} ${
+                      isDraft || event.status === 'tentative'
+                        ? 'time-event--tentative'
+                        : ''
+                    }`}
+                    style={{
+                      left,
+                      width,
+                      top: 34 + lane * 44,
+                      height: 36,
+                    }}
+                    onClick={() => {
+                      if (!isDraft) onEventClick(event)
+                    }}
+                    type="button"
+                    tabIndex={isDraft ? -1 : 0}
+                    title={`${formatTime(event.start)} ${event.title}`}
+                  >
+                    <span className="time-event__time">{formatTime(event.start)}</span>
+                    <span className="time-event__title">{event.title}</span>
+                    {isDraft && <span className="time-event__preview">预览</span>}
+                  </button>
+                )
+              })}
+
+              {nowVisible && (
+                <div
+                  className="now-line now-line--horizontal"
+                  style={{
+                    left: ((nowMinutes - START_HOUR * 60) / 60) * HORIZONTAL_HOUR_WIDTH + 18,
+                  }}
+                  aria-hidden="true"
+                >
+                  <span className="now-line__time">
+                    现在 {String(now.getHours()).padStart(2, '0')}:
+                    {String(now.getMinutes()).padStart(2, '0')}
+                  </span>
+                  <span className="now-line__dot" />
+                  <span className="now-line__rule" />
+                </div>
+              )}
+            </div>
+          </div>
+          {dayEvents.length === 0 && previews.length === 0 && (
+            <div className="timeline__empty timeline__empty--horizontal">
+              <p className="eyebrow">留白</p>
+              <h2>这一天还没有被安排</h2>
+              <p>把脑海里那句“周五要开会”，先丢给左边。</p>
+              <button className="ghost-button" onClick={onAdd} type="button">
+                <Icon name="plus" size={16} />
+                记一件事
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="timeline__scroll" ref={scrollRef}>
         <div className="timeline__canvas" style={{ height: TOTAL_MINUTES / 60 * HOUR_HEIGHT + 28 }}>
           {hours.map((hour) => (
@@ -324,6 +457,7 @@ export function Timeline({
           )}
         </div>
       </div>
+      )}
 
       <footer className="timeline__footer">
         <span>

@@ -58,6 +58,24 @@ function pathFor(config: GitHubConfig): string {
   )}/contents/${FILE_PATH}`
 }
 
+async function readFileAt(
+  config: GitHubConfig,
+  branch?: string,
+): Promise<{ document: ScheduleDocument; sha: string } | null> {
+  const query = branch ? `?ref=${encodeURIComponent(branch)}` : ''
+  const response = await fetch(`${API}${pathFor(config)}${query}`, {
+    headers: headers(config.token),
+  })
+  if (response.status === 404) return null
+  if (!response.ok) throw new Error(`读取云端日程失败：${await readError(response)}`)
+
+  const payload = (await response.json()) as { content?: string; sha?: string }
+  if (!payload.content || !payload.sha) throw new Error('云端 schedule.json 格式不正确')
+  const document = JSON.parse(decodeBase64(payload.content)) as ScheduleDocument
+  if (!Array.isArray(document.events)) throw new Error('云端 schedule.json 缺少 events')
+  return { document, sha: payload.sha }
+}
+
 export async function verifyGitHub(config: GitHubConfig): Promise<GitHubIdentity> {
   const userResponse = await fetch(`${API}/user`, { headers: headers(config.token) })
   if (!userResponse.ok) throw new Error(`GitHub 身份验证失败：${await readError(userResponse)}`)
@@ -74,20 +92,22 @@ export async function verifyGitHub(config: GitHubConfig): Promise<GitHubIdentity
 interface RemoteFile {
   document: ScheduleDocument
   sha: string
+  /** Empty string means GitHub's default branch. */
+  branch: string
 }
 
 export async function pullSchedule(config: GitHubConfig): Promise<RemoteFile | null> {
-  const response = await fetch(`${API}${pathFor(config)}?ref=${encodeURIComponent(config.branch)}`, {
-    headers: headers(config.token),
-  })
-  if (response.status === 404) return null
-  if (!response.ok) throw new Error(`读取云端日程失败：${await readError(response)}`)
+  const explicit = await readFileAt(config, config.branch)
+  if (explicit) return { ...explicit, branch: config.branch }
 
-  const payload = (await response.json()) as { content?: string; sha?: string }
-  if (!payload.content || !payload.sha) throw new Error('云端 schedule.json 格式不正确')
-  const document = JSON.parse(decodeBase64(payload.content)) as ScheduleDocument
-  if (!Array.isArray(document.events)) throw new Error('云端 schedule.json 缺少 events')
-  return { document, sha: payload.sha }
+  // A repository can have schedule.json on its default branch while the user
+  // typed another branch (or an old branch name). Fall back once so sync does
+  // not treat an existing file as new and then fail with "sha wasn't supplied".
+  if (config.branch) {
+    const fallback = await readFileAt(config)
+    if (fallback) return { ...fallback, branch: '' }
+  }
+  return null
 }
 
 function chooseEvent(local: ScheduleEvent, remote: ScheduleEvent): ScheduleEvent {
@@ -95,6 +115,9 @@ function chooseEvent(local: ScheduleEvent, remote: ScheduleEvent): ScheduleEvent
   const remoteTime = Date.parse(remote.updatedAt)
   if (localTime > remoteTime) return local
   if (remoteTime > localTime) return remote
+  // Same millisecond: a tombstone is deliberate, so it wins the tie.
+  if (local.deletedAt && !remote.deletedAt) return local
+  if (remote.deletedAt && !local.deletedAt) return remote
   // Same millisecond is rare; the device id makes the winner deterministic.
   return local.deviceId >= remote.deviceId ? local : remote
 }
@@ -155,7 +178,7 @@ export async function syncGitHub(
 ): Promise<SyncResult> {
   let remote = await pullSchedule(config)
   if (!remote) {
-    const sha = await pushDocument(config, local, undefined)
+    const sha = await pushDocument(config, local, undefined, config.branch)
     return {
       document: local,
       sha,
@@ -181,7 +204,7 @@ export async function syncGitHub(
   let sha = remote.sha
   let document = merged.document
   try {
-    sha = await pushDocument(config, document, sha)
+    sha = await pushDocument(config, document, sha, remote.branch)
   } catch (error) {
     // A concurrent push from another device invalidates the file SHA. Pull
     // once more, merge, and retry with the fresh SHA.
@@ -189,7 +212,7 @@ export async function syncGitHub(
     remote = await pullSchedule(config)
     if (!remote) throw error
     document = mergeSchedules(document, remote.document).document
-    sha = await pushDocument(config, document, remote.sha)
+    sha = await pushDocument(config, document, remote.sha, remote.branch)
   }
 
   return {
@@ -205,7 +228,27 @@ async function pushDocument(
   config: GitHubConfig,
   document: ScheduleDocument,
   sha: string | undefined,
+  branch = config.branch,
 ): Promise<string> {
+  let targetSha = sha
+  let targetBranch = branch
+
+  // Always resolve the existing blob first when the caller has no SHA. This
+  // also covers a branch mismatch: GitHub reports "sha wasn't supplied" when
+  // an update reaches an existing file without its current blob SHA.
+  if (!targetSha) {
+    const explicit = targetBranch ? await readFileAt(config, targetBranch) : null
+    if (explicit) {
+      targetSha = explicit.sha
+    } else {
+      const fallback = await readFileAt(config)
+      if (fallback) {
+        targetSha = fallback.sha
+        targetBranch = ''
+      }
+    }
+  }
+
   const response = await fetch(`${API}${pathFor(config)}`, {
     method: 'PUT',
     headers: {
@@ -215,8 +258,8 @@ async function pushDocument(
     body: JSON.stringify({
       message: `sync: ${document.events.length} events from 阑珊时刻`,
       content: encodeBase64(JSON.stringify(document, null, 2)),
-      branch: config.branch,
-      ...(sha ? { sha } : {}),
+      ...(targetBranch ? { branch: targetBranch } : {}),
+      ...(targetSha ? { sha: targetSha } : {}),
     }),
   })
   if (!response.ok) throw new Error(`上传云端日程失败：${await readError(response)}`)

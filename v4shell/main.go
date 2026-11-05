@@ -9,7 +9,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,13 +62,15 @@ type panelWindow struct {
 }
 
 type windowBridge struct {
-	app      *application.App
-	main     *application.WebviewWindow
-	mu       sync.Mutex
-	detached map[string]*panelWindow
-	attached map[string]bool
-	last     map[string]bounds
-	quitting bool
+	app          *application.App
+	main         *application.WebviewWindow
+	mu           sync.Mutex
+	detached     map[string]*panelWindow
+	attached     map[string]bool
+	last         map[string]bounds
+	previewPanel string
+	previewTitle string
+	quitting     bool
 }
 
 func (b *windowBridge) quit() {
@@ -75,6 +80,9 @@ func (b *windowBridge) quit() {
 		return
 	}
 	b.quitting = true
+	// A pending preview must disappear as soon as the app starts closing.
+	b.previewPanel = ""
+	b.previewTitle = ""
 	windows := make([]*panelWindow, 0, len(b.detached))
 	for _, entry := range b.detached {
 		entry.attachOnClose = true
@@ -341,6 +349,10 @@ func (b *windowBridge) handlePanelClosed(panel string, entry *panelWindow) {
 	if current, ok := b.detached[panel]; ok && current == entry {
 		delete(b.detached, panel)
 	}
+	if b.previewPanel == panel {
+		b.previewPanel = ""
+		b.previewTitle = ""
+	}
 	b.mu.Unlock()
 }
 
@@ -359,6 +371,10 @@ func (b *windowBridge) attach(panel string) bool {
 	entry.attachOnClose = true
 	delete(b.detached, panel)
 	b.attached[panel] = true
+	if b.previewPanel == panel {
+		b.previewPanel = ""
+		b.previewTitle = ""
+	}
 	b.mu.Unlock()
 	entry.window.Close()
 	return true
@@ -433,7 +449,7 @@ func (b *windowBridge) mainRect() bounds {
 	return bounds{x, y, w, h}
 }
 
-func (b *windowBridge) panelOverlapsMain(entry *panelWindow) bool {
+func (b *windowBridge) panelInDockZone(entry *panelWindow) bool {
 	x, y := entry.window.Position()
 	w, h := entry.window.Size()
 	if w <= 0 || h <= 0 {
@@ -442,15 +458,39 @@ func (b *windowBridge) panelOverlapsMain(entry *panelWindow) bool {
 	main := b.mainRect()
 	panel := bounds{x, y, w, h}
 	area := intersectionArea(main, panel)
-	if area == 0 {
+	if area*2 < w*h {
 		return false
 	}
-	// Require the floating window's title area to be inside the main window
-	// and at least half of the panel to overlap. This avoids accidental
-	// redocks while merely brushing the main window edge.
-	titleInside := x+w/2 >= main.x && x+w/2 <= main.x+main.width &&
-		y+18 >= main.y && y+18 <= main.y+main.height
-	return titleInside && area*2 >= w*h
+	// Deliberately smaller than "the title is anywhere over the main window":
+	// the cursor must bring the title into the central 64% of the main window
+	// before redocking arms. This keeps brushing past the edge harmless.
+	marginX := main.width * 18 / 100
+	marginY := main.height * 18 / 100
+	titleX, titleY := x+w/2, y+18
+	return titleX >= main.x+marginX && titleX <= main.x+main.width-marginX &&
+		titleY >= main.y+marginY && titleY <= main.y+main.height-marginY
+}
+
+func (b *windowBridge) updateDockPreview(panel string, entry *panelWindow) {
+	active := b.panelInDockZone(entry)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if active {
+		b.previewPanel = panel
+		b.previewTitle = panelTitles[panel]
+		return
+	}
+	if b.previewPanel == panel {
+		b.previewPanel = ""
+		b.previewTitle = ""
+	}
+}
+
+func (b *windowBridge) clearDockPreview() {
+	b.mu.Lock()
+	b.previewPanel = ""
+	b.previewTitle = ""
+	b.mu.Unlock()
 }
 
 func (b *windowBridge) handlePanelDragStart(panel string, entry *panelWindow) {
@@ -475,6 +515,7 @@ func (b *windowBridge) handlePanelDragEnd(panel string, entry *panelWindow) {
 	generation := entry.moveGeneration
 	b.mu.Unlock()
 
+	b.updateDockPreview(panel, entry)
 	go b.watchPanelDrag(panel, entry, generation, false)
 	go b.ensureOnScreen(panel, entry, generation)
 }
@@ -509,6 +550,7 @@ func (b *windowBridge) handlePanelMoved(panel string, entry *panelWindow) {
 	generation := entry.moveGeneration
 	b.mu.Unlock()
 
+	b.updateDockPreview(panel, entry)
 	go b.ensureOnScreen(panel, entry, generation)
 	go b.watchPanelDrag(panel, entry, generation, false)
 }
@@ -535,9 +577,10 @@ func (b *windowBridge) watchPanelDrag(panel string, entry *panelWindow, generati
 		if !paused {
 			continue
 		}
-		over := b.panelOverlapsMain(entry)
+		over := b.panelInDockZone(entry)
 		if !over {
 			overSince = time.Time{}
+			b.updateDockPreview(panel, entry)
 			if attempt > 4 {
 				return
 			}
@@ -551,7 +594,7 @@ func (b *windowBridge) watchPanelDrag(panel string, entry *panelWindow, generati
 		}
 		// Give the frame one extra beat after release before judging overlap.
 		time.Sleep(150 * time.Millisecond)
-		if b.panelOverlapsMain(entry) {
+		if b.panelInDockZone(entry) {
 			b.attach(panel)
 			return
 		}
@@ -683,6 +726,49 @@ func openExternal(rawURL string) error {
 	return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
 }
 
+var releaseTagPattern = regexp.MustCompile(`/releases/tag/(v?[0-9][^"'?#/]*)`)
+
+// fetchLatestReleaseFromPage uses GitHub's public release redirect instead of
+// the rate-limited REST API, so "check updates" works even after anonymous API
+// quota is exhausted.
+func fetchLatestReleaseFromPage() (string, string, error) {
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	pageURL := "https://github.com/sinsine/lanshan-moments/releases/latest"
+	response, err := client.Get(pageURL)
+	if err != nil {
+		return "", "", err
+	}
+	defer response.Body.Close()
+	location := response.Header.Get("Location")
+	if location == "" {
+		data, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024))
+		if readErr != nil {
+			return "", "", readErr
+		}
+		match := releaseTagPattern.FindSubmatch(data)
+		if len(match) < 2 {
+			return "", "", fmt.Errorf("release tag not found")
+		}
+		tag := string(match[1])
+		return strings.TrimPrefix(tag, "v"), pageURL, nil
+	}
+	match := releaseTagPattern.FindStringSubmatch(location)
+	if len(match) < 2 {
+		return "", "", fmt.Errorf("release tag not found")
+	}
+	tag := match[1]
+	releaseURL := location
+	if strings.HasPrefix(releaseURL, "/") {
+		releaseURL = "https://github.com" + releaseURL
+	}
+	return strings.TrimPrefix(tag, "v"), releaseURL, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -696,7 +782,7 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"native":  true,
 				"windows": true,
-				"version": "0.4.3",
+				"version": "0.5.0",
 			})
 		case "/api/detach":
 			panel := r.URL.Query().Get("panel")
@@ -757,6 +843,28 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 				"detached": detached,
 				"attached": attached,
 			})
+		case "/api/dock-preview":
+			b.mu.Lock()
+			active := b.previewPanel != ""
+			panel := b.previewPanel
+			title := b.previewTitle
+			b.mu.Unlock()
+			writeJSON(w, http.StatusOK, map[string]any{
+				"active": active,
+				"panel":  panel,
+				"title":  title,
+			})
+		case "/api/update":
+			latest, releaseURL, err := fetchLatestReleaseFromPage()
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":     true,
+				"latest": latest,
+				"url":    releaseURL,
+			})
 		case "/api/ack":
 			b.acknowledge(r.URL.Query().Get("panel"))
 			w.WriteHeader(http.StatusNoContent)
@@ -794,6 +902,125 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 	})
 }
 
+func legacyVersion(name string) [3]int {
+	var version [3]int
+	parts := regexp.MustCompile(`([0-9]+)\.([0-9]+)\.([0-9]+)`).FindStringSubmatch(name)
+	if len(parts) == 4 {
+		version[0], _ = strconv.Atoi(parts[1])
+		version[1], _ = strconv.Atoi(parts[2])
+		version[2], _ = strconv.Atoi(parts[3])
+	}
+	return version
+}
+
+func copyDirectory(source, destination string) error {
+	info, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		input, err := os.Open(source)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		output, err := os.Create(destination)
+		if err != nil {
+			return err
+		}
+		defer output.Close()
+		_, err = io.Copy(output, input)
+		return err
+	}
+	if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := copyDirectory(
+			filepath.Join(source, entry.Name()),
+			filepath.Join(destination, entry.Name()),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// stableWebviewDataPath keeps WebView2 localStorage (login token, layout,
+// events) under one version-independent directory. The Wails default is
+// %APPDATA%\[BinaryName.exe], so every renamed release would otherwise look
+// like a fresh install and drop the user's session.
+func stableWebviewDataPath() string {
+	base, err := os.UserConfigDir()
+	if err != nil || base == "" {
+		base = os.Getenv("APPDATA")
+	}
+	if base == "" {
+		return ""
+	}
+	stable := filepath.Join(base, "LanshanMoments")
+	if info, err := os.Stat(stable); err == nil && info.IsDir() {
+		entries, _ := os.ReadDir(stable)
+		if len(entries) > 0 {
+			return stable
+		}
+		// An empty directory can be left by an interrupted first launch.
+		_ = os.Remove(stable)
+	}
+
+	candidates := make([]string, 0, 4)
+	for _, pattern := range []string{"lanshan*", "Lanshan*"} {
+		matches, _ := filepath.Glob(filepath.Join(base, pattern))
+		candidates = append(candidates, matches...)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		leftVersion := legacyVersion(filepath.Base(candidates[i]))
+		rightVersion := legacyVersion(filepath.Base(candidates[j]))
+		for index := 0; index < 3; index++ {
+			if leftVersion[index] != rightVersion[index] {
+				return leftVersion[index] > rightVersion[index]
+			}
+		}
+		left, leftErr := os.Stat(candidates[i])
+		right, rightErr := os.Stat(candidates[j])
+		if leftErr != nil {
+			return false
+		}
+		if rightErr != nil {
+			return true
+		}
+		return left.ModTime().After(right.ModTime())
+	})
+	for _, candidate := range candidates {
+		if strings.EqualFold(candidate, stable) {
+			continue
+		}
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(candidate, "EBWebView")); err != nil {
+			continue
+		}
+		if err := os.Rename(candidate, stable); err == nil {
+			return stable
+		}
+		// The old app may still hold a WebView2 lock. Copying preserves the
+		// session when a rename is not possible.
+		if err := copyDirectory(candidate, stable); err == nil {
+			return stable
+		}
+		_ = os.RemoveAll(stable)
+	}
+
+	_ = os.MkdirAll(stable, 0o755)
+	return stable
+}
+
 func main() {
 	bridge := &windowBridge{
 		detached: map[string]*panelWindow{},
@@ -803,6 +1030,9 @@ func main() {
 	static := application.AssetFileServerFS(assets)
 	app := application.New(application.Options{
 		Name: "阑珊时刻",
+		Windows: application.WindowsOptions{
+			WebviewUserDataPath: stableWebviewDataPath(),
+		},
 		Assets: application.AssetOptions{
 			Handler: bridge.handler(static),
 		},

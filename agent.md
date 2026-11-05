@@ -8,7 +8,7 @@
 「阑珊时刻」把一段话、截图或文章整理成统一日程 JSON，落在时间轴上，并通过 GitHub 私有仓库跨设备同步。
 
 - 主仓库：<https://github.com/sinsine/lanshan-moments>
-- 当前版本：`0.4.3`
+- 当前版本：`0.5.0`
 - 目标平台：Windows（优先）+ Android（ColorOS 16 / 一加 Ace 6T 测试机）
 - 设计语言：墨辰 / DarkCube 同款黑白液态玻璃，日间 + 夜间双主题
 - 当前默认主题：**日间**
@@ -22,6 +22,8 @@
 | `src/components/DockWorkspace.tsx` | 递归停靠工作区、标签组、拖拽停靠、浮动窗口、右键菜单 |
 | `src/lib/layout.ts` | v3 布局模型、分割/合并/浮动、版本迁移与 localStorage |
 | `src/dock.css` | v0.4.3 停靠工作区 / 标签组 / 浮动窗口样式 |
+| `src/v044.css` | v0.4.4–v0.5.0 液态玻璃、横向时间轴、移动页面、提供商选择 |
+| `src/lib/changelog.ts` | 应用内更新日志数据 |
 | `src/lib/native.ts` | Wails v2 / Wails v3 / Capacitor 三套原生桥接 |
 | `src/lib/storage.ts` | localStorage 数据、主题迁移、旧 sessionStorage 凭据迁移 |
 | `src/lib/providers.ts` | AI 提供商预设与 `/models` 拉取 |
@@ -47,9 +49,12 @@
 
 - 默认四组：添加日程 / 整理箱 / 周概览 / 时间轴，递归分割成四栏；停靠状态**无圆角**。
 - 只有面板标题栏能发起拖拽；内容区点击、输入、滚动不触发窗口移动。
-- 拖动期间布局不实时交换；经过目标标题栏显示合并高亮，经过内容四边显示分割预览，松手才落位。
+- 拖动期间布局不实时交换；目标标题栏合并标签，内容四边切半，正中心交换两个窗口的位置。
 - 拖到工作区边缘/角落/顶部：半屏 / 四分之一 / 最大化停靠预览；双击标题栏最大化/还原。
-- 标签组可切换、单个关闭/独立；右键菜单支持浮动、最大化、全屏、关闭标签组、保存/恢复/重置布局。
+- 标签组可切换、单个关闭/独立；拖动某个标签只移动该标签，拖动标题栏左侧握柄或单标签标题移动整组。
+- 只有把窗口拖出应用视口才独立；在标题栏/应用内空白处松手不改变布局。
+- 独立窗口收回到主窗口的判定为中心区域（约中央 64%）且至少一半重叠；主窗口与独立窗口都显示收回预览。
+- 右键菜单支持浮动、最大化、全屏、关闭标签组、保存/恢复/重置布局。
 - 拖出主窗口：`onDetach` → `/api/detach`；成功才从布局移除面板，失败保留面板。网页环境退化为工作区浮动窗口。
 - Wails v3 独立窗口：`/?panel=capture|week|timeline|inbox`，只渲染对应面板；标题栏自定义收回/最小化/最大化/关闭。
 - 独立窗口移回主窗口上方并松手：Go 侧检测重叠并收回面板；关闭独立窗口也会恢复面板。
@@ -86,7 +91,7 @@ Copy-Item dist v4shell/dist -Recurse
 $env:PATH="$env:USERPROFILE\sdk\go\bin;$env:USERPROFILE\go\bin;$env:PATH"
 $env:GOPROXY='https://goproxy.cn,direct'
 Push-Location v4shell
-go build -ldflags "-H windowsgui" -o lanshan-moments-0.4.3-windows-amd64.exe .
+go build -ldflags "-H windowsgui" -o lanshan-moments-0.5.0-windows-amd64.exe .
 Pop-Location
 ```
 
@@ -117,11 +122,11 @@ Android 工具链：
 
 当前项目名固定为 **`lanshan-moments`**。
 
-示例 v0.4.3：
+示例 v0.5.0：
 
-- `lanshan-moments-0.4.3-windows-amd64.exe`
-- `lanshan-moments-0.4.3-android-universal.apk`
-- `lanshan-moments-0.4.3-source.zip`
+- `lanshan-moments-0.5.0-windows-amd64.exe`
+- `lanshan-moments-0.5.0-android-universal.apk`
+- `lanshan-moments-0.5.0-source.zip`
 
 发布步骤：
 
@@ -139,14 +144,16 @@ Android 工具链：
 
 - **不要恢复默认演示日程**：首次安装为空；旧 `evt_seed_*` 会被清理。
 - **DeepSeek 默认地址**：`https://api.deepseek.com`，不是 `https://api.deepseek.com/v1`；旧配置会自动迁移。
-- **API Key / GitHub Token**：存 `localStorage`；不要写进仓库、日志、截图。
+- **API Key / GitHub Token**：存 `localStorage`；不要写进仓库、日志、截图。Wails 的 WebView2 数据目录固定为 `%APPDATA%\LanshanMoments`，并迁移旧 exe 名目录，更新版本后登录保持。
 - **默认主题**：日间；旧用户会迁移一次，之后保留用户选择。
 - **字体**：全站 HarmonyOS Sans SC；不要重新引入系统字体作为首选。字体文件约 17 MB，`HarmonyOS-Sans.zip` 不得提交（已 gitignore）。
 - **窗口控制**：顶部导航集成最小化/最大化/关闭；Windows 无原生标题栏。
 - **独立窗口**：必须来自 `v4shell`，不能只做主窗口内浮动冒充。
 - **平铺/标签页**：平铺无圆角；标签合并/切换不能丢面板或打乱其他组。
 - **主题**：所有新增颜色必须使用 `var(--...)` token，同时检查日间/夜间。
-- **移动端**：点击不能出现蓝框；Android 启动隐藏状态栏。
+- **移动端**：点击不能出现蓝框；Android 启动隐藏状态栏；周表 / 时间轴 / 添加 / 我的四栏等权重，添加与我的为内联页而非抽屉/弹窗。
+- **时间轴**：电脑端横向、手机端纵向；横向按小时与泳道排布。
+- **设置**：桌面端从标题栏「设置」展开菜单进入，隐藏提醒；手机端在「我的」栏目内嵌设置。
 
 ## 7. 已知问题 / 容易踩的坑
 
@@ -171,10 +178,13 @@ Android 工具链：
 - [ ] 日间/夜间都检查
 - [ ] 四窗口铺满、无圆角
 - [ ] 只有标题栏能拖动；内容区输入/选择文字不移动窗口
-- [ ] 拖到另一个标题栏合并为标签页，拖动期间不交换位置
+- [ ] 拖动标签页只移动该标签，拖动标题栏移动整组
+- [ ] 拖到另一个标题栏合并；四边切半；正中心交换；只有拖出应用窗口才独立
 - [ ] 拖到面板四边形成分割；拖到边缘/角落/顶部显示半屏/四分之一/最大化预览
 - [ ] 拖动分隔条改变比例
-- [ ] 拖出工作区创建独立原生窗口
+- [ ] 电脑端时间轴为横向泳道，手机端为纵向
+- [ ] 标题栏「窗口」右侧有「设置」菜单，桌面无提醒 tab
+- [ ] 更新 exe 名后仍沿用 `%APPDATA%\LanshanMoments`，登录不丢
 - [ ] 独立窗口移回主窗口恢复面板；关闭/收回独立窗口也恢复面板
 - [ ] 布局保存、刷新恢复、重置默认布局
 - [ ] 顶部最小化/最大化/关闭可用；关闭主窗口不残留独立窗口
@@ -182,7 +192,9 @@ Android 工具链：
 
 移动端：
 
-- [ ] 手机周表/时间轴/设置可切换
+- [ ] 手机周表/时间轴/添加/我的四栏可切换；添加与我的为内联页
+- [ ] 手机时间轴选中日期为深底浅字
+- [ ] 手机模型提供商选择弹层跟随应用主题
 - [ ] 状态栏隐藏
 - [ ] 点击无蓝框
 - [ ] APK 可安装（ColorOS 16）

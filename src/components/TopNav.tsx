@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Icon, LogoMark } from './Icons'
 
 /**
- * Desktop top navigation bar: brand, three app menus (应用 / 编辑 / 窗口),
+ * Desktop top navigation bar: brand, four app menus (应用 / 编辑 / 窗口 / 设置),
  * sync status pill and theme toggle. Styling lives in the scoped `<style>`
  * block below (hoisted and de-duplicated by React 19 via href/precedence);
  * it only consumes the design tokens from `src/index.css`, so there are no
@@ -11,6 +11,8 @@ import { Icon, LogoMark } from './Icons'
  */
 
 export type TopNavWindowId = 'timeline' | 'week' | 'inbox' | 'capture' | 'settings'
+
+export type TopNavSettingsTab = 'ai' | 'sync' | 'data'
 
 export type TopNavEditAction =
   | 'undo'
@@ -33,11 +35,14 @@ export interface TopNavProps {
   onOpenAbout: () => void
   onOpenAuthor: () => void
   onCheckUpdates: () => void
+  onOpenChangelog: () => void
   onExit: () => void
+  onOpenSettingsTab: (tab: TopNavSettingsTab) => void
   onEditAction: (action: TopNavEditAction) => void
   syncLabel: string
   syncConnected: boolean
   syncing: boolean
+  githubAvatar?: string
   onSync: () => void
   onOpenSyncSettings: () => void
   theme: 'dark' | 'light'
@@ -55,11 +60,13 @@ const COPY = {
     app: '应用',
     edit: '编辑',
     window: '窗口',
+    settings: '设置',
   },
   app: {
     about: '关于 阑珊时刻',
     author: '关于作者',
     checkUpdates: '检查更新',
+    changelog: '更新日志',
     exit: '退出',
   },
   edit: {
@@ -73,6 +80,11 @@ const COPY = {
   },
   window: {
     empty: '暂无可切换的窗口',
+  },
+  settings: {
+    ai: '模型接口',
+    sync: '多设备同步',
+    data: '数据',
   },
   shortcuts: {
     undo: 'Ctrl+Z',
@@ -95,12 +107,13 @@ const COPY = {
   },
 } as const
 
-type MenuId = 'app' | 'edit' | 'window'
+type MenuId = 'app' | 'edit' | 'window' | 'settings'
 
 const MENUS: ReadonlyArray<{ id: MenuId; label: string }> = [
   { id: 'app', label: COPY.menus.app },
   { id: 'edit', label: COPY.menus.edit },
   { id: 'window', label: COPY.menus.window },
+  { id: 'settings', label: COPY.menus.settings },
 ]
 
 type MenuRow =
@@ -353,6 +366,16 @@ const TOPNAV_CSS = `
   animation: topnav-spin 1.1s linear infinite;
 }
 
+.topnav-avatar {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+}
+
 .topnav-sync-label {
   max-width: 128px;
   overflow: hidden;
@@ -410,11 +433,14 @@ export function TopNav({
   onOpenAbout,
   onOpenAuthor,
   onCheckUpdates,
+  onOpenChangelog,
   onExit,
+  onOpenSettingsTab,
   onEditAction,
   syncLabel,
   syncConnected,
   syncing,
+  githubAvatar,
   onSync,
   onOpenSyncSettings,
   theme,
@@ -436,6 +462,8 @@ export function TopNav({
     { kind: 'item', id: 'author', label: COPY.app.author, onSelect: onOpenAuthor },
     { kind: 'divider', id: 'app-divider-1' },
     { kind: 'item', id: 'updates', label: COPY.app.checkUpdates, onSelect: onCheckUpdates },
+    { kind: 'item', id: 'changelog', label: COPY.app.changelog, onSelect: onOpenChangelog },
+    { kind: 'divider', id: 'app-divider-2' },
     { kind: 'item', id: 'exit', label: COPY.app.exit, onSelect: onExit },
   ]
 
@@ -498,10 +526,32 @@ export function TopNav({
           onSelect: () => onToggleWindow(item.id),
         }))
 
+  const settingsRows: MenuRow[] = [
+    {
+      kind: 'item',
+      id: 'settings-ai',
+      label: COPY.settings.ai,
+      onSelect: () => onOpenSettingsTab('ai'),
+    },
+    {
+      kind: 'item',
+      id: 'settings-sync',
+      label: COPY.settings.sync,
+      onSelect: () => onOpenSettingsTab('sync'),
+    },
+    {
+      kind: 'item',
+      id: 'settings-data',
+      label: COPY.settings.data,
+      onSelect: () => onOpenSettingsTab('data'),
+    },
+  ]
+
   const rowsByMenu: Record<MenuId, MenuRow[]> = {
     app: appRows,
     edit: editRows,
     window: windowRows,
+    settings: settingsRows,
   }
 
   const focusMenuItem = (edge: 'first' | 'last') => {
@@ -748,10 +798,21 @@ export function TopNav({
           aria-label={COPY.sync.aria(syncLabel, syncConnected)}
           aria-busy={syncing}
         >
-          <Icon
-            name={syncing ? 'refresh' : syncConnected ? 'cloud' : 'cloud-off'}
-            size={14}
-          />
+          {githubAvatar ? (
+            <img
+              className="topnav-avatar"
+              src={githubAvatar}
+              alt=""
+              width={18}
+              height={18}
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <Icon
+              name={syncing ? 'refresh' : syncConnected ? 'cloud' : 'cloud-off'}
+              size={14}
+            />
+          )}
           <span className="topnav-sync-dot" aria-hidden="true" />
           <span className="topnav-sync-label">{syncLabel}</span>
         </button>

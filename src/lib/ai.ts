@@ -1,4 +1,5 @@
 import type {
+  AiThinking,
   Attendance,
   AttachedImage,
   ClarifyField,
@@ -13,6 +14,7 @@ export interface AiConfig {
   baseUrl: string
   model: string
   apiKey: string
+  thinking?: AiThinking
 }
 
 const SCHEMA_EXAMPLE = `{
@@ -63,7 +65,7 @@ ${SCHEMA_EXAMPLE}
 2. start / end 使用带时区偏移的 ISO 8601。无法确定具体时间时 start 为 null，并放进待安排。
 3. 只有日期没有时间时，allDay = true，start 为当天 00:00，end 为次日 00:00。
 4. 相对日期以“当前时间”为锚点解析；“周五”指最近一个尚未过去的周五，“下周三”指下一周的周三。
-5. 一段输入可以拆成多个事件。不要把不同事件合并。
+5. 一段输入可以拆成多个事件，events 数组必须列出全部日程；不要合并、遗漏，也不要只返回第一条。
 6. 不确定、缺少年份、时间冲突或原文模糊时，在 warnings 里用一句中文说明，并降低 confidence。
 7. category 只能是 work | life | health | focus | other。
 8. attendance 只能是 required | optional | not_required | unknown。
@@ -79,6 +81,30 @@ ${SCHEMA_EXAMPLE}
 14. 不要在 JSON 之外输出任何字符。`
 }
 
+function isDeepSeek(config: AiConfig): boolean {
+  // The thinking / reasoning_effort fields are DeepSeek's OpenAI-compatible
+  // extension. Sending them to arbitrary gateways (including OpenRouter routes
+  // named "deepseek/...") can be rejected, so only the official endpoint opts in.
+  return /(^|\.)deepseek\.com/i.test(config.baseUrl)
+}
+
+function applyThinking(
+  body: Record<string, unknown>,
+  config: AiConfig,
+): void {
+  if (!isDeepSeek(config)) return
+  const thinking = config.thinking ?? 'off'
+  if (thinking === 'off') {
+    body.thinking = { type: 'disabled' }
+    return
+  }
+  body.thinking = { type: 'enabled' }
+  body.reasoning_effort = thinking === 'low' ? 'low' : thinking === 'max' ? 'max' : 'high'
+  // Thinking mode ignores temperature; omit it so gateways do not reject the
+  // combination and so the JSON contract is not weakened by sampling.
+  delete body.temperature
+}
+
 async function requestCompletion(
   config: AiConfig,
   body: Record<string, unknown>,
@@ -86,7 +112,7 @@ async function requestCompletion(
   const base = config.baseUrl.replace(/\/+$/, '')
   const endpoint = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 60_000)
+  const timer = window.setTimeout(() => controller.abort(), 90_000)
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -108,16 +134,68 @@ async function requestCompletion(
       throw new Error(detail)
     }
     const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }>
+      choices?: Array<{
+        finish_reason?: string
+        message?: {
+          content?: string | Array<{ type?: string; text?: string }>
+          reasoning_content?: string
+        }
+      }>
     }
-    const content = payload.choices?.[0]?.message?.content
-    if (typeof content === 'string') return content
+    const choice = payload.choices?.[0]
+    const content = choice?.message?.content
+    if (typeof content === 'string' && content.trim()) return content
     if (Array.isArray(content)) {
-      return content.map((part) => part.text ?? '').join('')
+      const text = content.map((part) => part.text ?? '').join('')
+      if (text.trim()) return text
+    }
+    if (choice?.message?.reasoning_content?.trim()) {
+      throw new Error('模型只返回了思考过程，没有最终 JSON；请把思考强度设为“关闭”，或提高输出上限')
+    }
+    if (choice?.finish_reason === 'length') {
+      throw new Error('模型输出被截断，请提高输出上限或把思考强度设为“关闭”')
     }
     throw new Error('模型没有返回内容')
   } finally {
     window.clearTimeout(timer)
+  }
+}
+
+function extractBalancedJson(text: string): string | null {
+  const start = text.search(/[[{]/)
+  if (start < 0) return null
+  const opener = text[start]
+  const closer = opener === '{' ? '}' : ']'
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === opener) depth += 1
+    else if (char === closer) {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1)
+    }
+  }
+  return null
+}
+
+function parseJsonCandidate(candidate: string): unknown {
+  try {
+    return JSON.parse(candidate)
+  } catch {
+    // Some models leave a trailing comma before the closing bracket.
+    return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1'))
   }
 }
 
@@ -126,13 +204,19 @@ function parseJsonObject(raw: string): unknown {
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '')
+  if (!cleaned) throw new Error('模型返回了空内容，无法解析 JSON')
   try {
     return JSON.parse(cleaned)
   } catch {
-    const start = cleaned.indexOf('{')
-    const end = cleaned.lastIndexOf('}')
-    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1))
-    throw new Error('模型返回的内容不是合法 JSON')
+    const candidate = extractBalancedJson(cleaned)
+    if (candidate) {
+      try {
+        return parseJsonCandidate(candidate)
+      } catch {
+        // Fall through to the actionable error below.
+      }
+    }
+    throw new Error('模型返回的内容不是合法 JSON；如果开启了思考模式，请把思考强度设为“关闭”后重试')
   }
 }
 
@@ -346,13 +430,14 @@ export async function parseWithAi(
   const body: Record<string, unknown> = {
     model: config.model,
     temperature: 0.1,
-    max_tokens: 2200,
+    max_tokens: isDeepSeek(config) ? 8192 : 4096,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: systemPrompt(now) },
       { role: 'user', content: image ? content : userText },
     ],
   }
+  applyThinking(body, config)
 
   let raw: string
   try {
@@ -369,10 +454,38 @@ export async function parseWithAi(
     }
   }
 
-  const parsed = parseJsonObject(raw) as { events?: unknown[] }
-  if (!Array.isArray(parsed.events)) throw new Error('模型没有返回 events 数组')
+  let parsed: unknown
+  try {
+    parsed = parseJsonObject(raw)
+  } catch (firstError) {
+    const thinking = body.thinking as { type?: string } | undefined
+    if (thinking?.type === 'enabled') {
+      // Thinking models can spend the output budget on reasoning and leave
+      // truncated or non-JSON content. One deterministic retry with thinking
+      // disabled is cheaper and more reliable than guessing at the prose.
+      body.thinking = { type: 'disabled' }
+      delete body.reasoning_effort
+      body.max_tokens = 8192
+      raw = await requestCompletion(config, body)
+      parsed = parseJsonObject(raw)
+    } else if (body.response_format) {
+      delete body.response_format
+      raw = await requestCompletion(config, body)
+      parsed = parseJsonObject(raw)
+    } else {
+      throw firstError
+    }
+  }
 
-  const drafts = parsed.events
+  const root = parsed as { events?: unknown[] } | unknown[]
+  const events = Array.isArray(root)
+    ? root
+    : root && typeof root === 'object' && Array.isArray(root.events)
+      ? root.events
+      : null
+  if (!events) throw new Error('模型没有返回 events 数组')
+
+  const drafts = events
     .map((event) =>
       normaliseEvent(event, userText.slice(0, 160), deviceId, image ? 'image' : 'text'),
     )
@@ -391,4 +504,25 @@ export function friendlyAiError(error: unknown): string {
   }
   if (error instanceof Error) return error.message
   return '调用模型时发生未知错误'
+}
+
+/** Lightweight model-specific connection probe used by the settings UI. */
+export async function testAiConnection(config: AiConfig): Promise<string> {
+  if (!config.apiKey.trim()) throw new Error('请先填写 API Key')
+  if (!config.model.trim()) throw new Error('请先选择模型')
+  const body: Record<string, unknown> = {
+    model: config.model,
+    max_tokens: isDeepSeek(config) ? 4096 : 64,
+    temperature: 0,
+    messages: [
+      {
+        role: 'user',
+        content: '这是一次连接测试。请只回复：OK',
+      },
+    ],
+  }
+  applyThinking(body, config)
+  const content = await requestCompletion(config, body)
+  if (!content.trim()) throw new Error('模型返回了空内容')
+  return '连接成功'
 }

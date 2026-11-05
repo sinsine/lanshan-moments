@@ -16,6 +16,9 @@ import {
   dockGroup,
   dockGroupToCorner,
   dockGroupToRoot,
+  dockPanel,
+  dockPanelToCorner,
+  dockPanelToRoot,
   findGroup,
   floatPanel,
   focusFloating,
@@ -25,9 +28,12 @@ import {
   removeFloating,
   removeGroup,
   removePanel,
+  reorderTab,
   saveLayoutBackup,
   saveStoredLayout,
   setActiveTab,
+  swapGroups,
+  swapPanelWithGroup,
   setMaximized,
   setSplitRatio,
   toggleMaximized,
@@ -51,6 +57,7 @@ export interface DockPanel {
 interface DockWorkspaceProps {
   panels: DockPanel[]
   native: boolean
+  redockPreview?: { title: string } | null
   onClose: (id: PanelId) => void
   onDetach: (id: PanelId, point?: { x: number; y: number }) => Promise<boolean>
   onFocus: (id: PanelId) => void
@@ -66,8 +73,9 @@ interface Rect {
 }
 
 interface DragView {
-  kind: 'group' | 'float'
+  kind: 'group' | 'tab' | 'float'
   id: string
+  panel?: PanelId
   x: number
   y: number
   moved: boolean
@@ -76,6 +84,7 @@ interface DragView {
 interface DragSession extends DragView {
   tabs: PanelId[]
   active: PanelId
+  sourceGroupId: string
   startX: number
   startY: number
   origin: Rect
@@ -86,6 +95,8 @@ type SplitSide = 'left' | 'right' | 'top' | 'bottom'
 
 type DropTarget =
   | { kind: 'merge'; groupId: string; title: string; rect: Rect; label: string }
+  | { kind: 'reorder'; groupId: string; index: number; title: string; rect: Rect; label: string }
+  | { kind: 'swap'; groupId: string; title: string; rect: Rect; label: string }
   | { kind: 'split'; groupId: string; side: SplitSide; title: string; rect: Rect; label: string }
   | { kind: 'root'; side: SplitSide; rect: Rect; label: string }
   | { kind: 'corner'; corner: DockCorner; rect: Rect; label: string }
@@ -147,6 +158,10 @@ function sameTarget(a: DropTarget | null, b: DropTarget | null): boolean {
   if (!a || !b) return a === b
   if (a.kind !== b.kind) return false
   if (a.kind === 'merge') return b.kind === 'merge' && a.groupId === b.groupId
+  if (a.kind === 'reorder') {
+    return b.kind === 'reorder' && a.groupId === b.groupId && a.index === b.index
+  }
+  if (a.kind === 'swap') return b.kind === 'swap' && a.groupId === b.groupId
   if (a.kind === 'split') {
     return b.kind === 'split' && a.groupId === b.groupId && a.side === b.side
   }
@@ -171,6 +186,7 @@ function sideLabel(side: SplitSide): string {
 export function DockWorkspace({
   panels,
   native,
+  redockPreview,
   onClose,
   onDetach,
   onFocus,
@@ -364,10 +380,17 @@ export function DockWorkspace({
 
   const resolveDropTarget = (x: number, y: number, session: DragSession): DropTarget | null => {
     const root = rootRef.current
-    if (!root) return { kind: 'outside', rect: null, label: '独立窗口' }
+    if (!root) return null
+    // Only leaving the application viewport creates an independent window.
+    // Dropping on the title bar or another in-app area is never a detach.
+    const viewportWidth = document.documentElement.clientWidth
+    const viewportHeight = document.documentElement.clientHeight
+    if (x < 0 || y < 0 || x >= viewportWidth || y >= viewportHeight) {
+      return { kind: 'outside', rect: null, label: '移出窗口后独立' }
+    }
     const bounds = root.getBoundingClientRect()
     if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) {
-      return { kind: 'outside', rect: null, label: '独立窗口' }
+      return null
     }
 
     const innerX = x - bounds.left
@@ -448,6 +471,48 @@ export function DockWorkspace({
     const groupElement = findGroupElementAt(x, y)
     if (groupElement) {
       const groupId = groupElement.dataset.dockGroup
+      if (
+        groupId &&
+        groupId === session.id &&
+        session.kind === 'tab' &&
+        session.panel
+      ) {
+        const bar = groupElement.querySelector<HTMLElement>('.dock-group__bar')
+        const barRect = bar?.getBoundingClientRect()
+        if (bar && barRect && y <= barRect.bottom + 4) {
+          const tabs = Array.from(
+            bar.querySelectorAll<HTMLElement>('.dock-group__tab[data-panel]'),
+          ).filter((tab) => tab.dataset.panel !== session.panel)
+          if (tabs.length > 0) {
+            const rects = tabs.map((tab) => tab.getBoundingClientRect())
+            let index = rects.length
+            for (let position = 0; position < rects.length; position += 1) {
+              if (x < rects[position].left + rects[position].width / 2) {
+                index = position
+                break
+              }
+            }
+            const insertX =
+              index < rects.length
+                ? rects[index].left
+                : rects[rects.length - 1].right
+            return {
+              kind: 'reorder',
+              groupId,
+              index,
+              title: panelMap.get(session.panel)?.title ?? session.panel,
+              rect: {
+                left: insertX - 2,
+                top: barRect.top,
+                width: 4,
+                height: barRect.height,
+              },
+              label: '调整标签顺序',
+            }
+          }
+        }
+        return null
+      }
       if (groupId && groupId !== session.id) {
         const group = findGroup(layoutRef.current.root, groupId)
         const fallbackTitle = group ? panelMap.get(group.active)?.title : ''
@@ -468,6 +533,18 @@ export function DockWorkspace({
 
         const contentTop = Math.max(groupRect.top, barRect?.bottom ?? groupRect.top)
         const contentHeight = Math.max(1, groupRect.bottom - contentTop)
+        const centerX = (x - groupRect.left) / Math.max(1, groupRect.width)
+        const centerY = (y - contentTop) / contentHeight
+        if (centerX > 0.33 && centerX < 0.67 && centerY > 0.28 && centerY < 0.72) {
+          return {
+            kind: 'swap',
+            groupId,
+            title,
+            rect: toRect(groupRect),
+            label: `交换「${title}」的位置`,
+          }
+        }
+
         const edgeX = Math.min(GROUP_EDGE_MAX, groupRect.width * 0.28)
         const edgeY = Math.min(GROUP_EDGE_MAX, contentHeight * 0.3)
         const distances: Array<{ side: SplitSide; distance: number; limit: number }> = [
@@ -481,53 +558,42 @@ export function DockWorkspace({
             ? item
             : best,
         )
-
-        if (nearest.distance <= nearest.limit) {
-          const side = nearest.side
-          const rect =
-            side === 'left'
+        const side = nearest.side
+        const rect =
+          side === 'left'
+            ? {
+                left: groupRect.left,
+                top: groupRect.top,
+                width: groupRect.width / 2,
+                height: groupRect.height,
+              }
+            : side === 'right'
               ? {
-                  left: groupRect.left,
+                  left: groupRect.left + groupRect.width / 2,
                   top: groupRect.top,
                   width: groupRect.width / 2,
                   height: groupRect.height,
                 }
-              : side === 'right'
+              : side === 'top'
                 ? {
-                    left: groupRect.left + groupRect.width / 2,
-                    top: groupRect.top,
-                    width: groupRect.width / 2,
-                    height: groupRect.height,
+                    left: groupRect.left,
+                    top: contentTop,
+                    width: groupRect.width,
+                    height: contentHeight / 2,
                   }
-                : side === 'top'
-                  ? {
-                      left: groupRect.left,
-                      top: contentTop,
-                      width: groupRect.width,
-                      height: contentHeight / 2,
-                    }
-                  : {
-                      left: groupRect.left,
-                      top: contentTop + contentHeight / 2,
-                      width: groupRect.width,
-                      height: contentHeight / 2,
-                    }
-          return {
-            kind: 'split',
-            groupId,
-            side,
-            title,
-            rect,
-            label: `停靠到「${title}」${sideLabel(side)}`,
-          }
-        }
-
+                : {
+                    left: groupRect.left,
+                    top: contentTop + contentHeight / 2,
+                    width: groupRect.width,
+                    height: contentHeight / 2,
+                  }
         return {
-          kind: 'merge',
+          kind: 'split',
           groupId,
+          side,
           title,
-          rect: toRect(groupRect),
-          label: `合并标签到「${title}」`,
+          rect,
+          label: `停靠到「${title}」${sideLabel(side)}`,
         }
       }
     }
@@ -543,13 +609,15 @@ export function DockWorkspace({
       notify('独立窗口请用标题栏的「停靠」按钮收回', 'error')
       return
     }
-    const current = layoutRef.current
-    const group = findGroup(current.root, session.id)
-    if (!group) return
 
+    const current = layoutRef.current
+    const sourceGroup = findGroup(current.root, session.sourceGroupId)
+    if (!sourceGroup) return
+
+    const panel = session.kind === 'tab' ? session.panel ?? session.active : sourceGroup.active
     if (!native) {
-      const available = panelsRef.current.map((panel) => panel.id)
-      const next = normalizeLayout(current, available, group.id)
+      const available = panelsRef.current.map((item) => item.id)
+      const next = normalizeLayout(current, available, session.sourceGroupId)
       const root = rootRef.current?.getBoundingClientRect()
       const origin = session.origin
       const x = origin.left - (root?.left ?? 0) + 18
@@ -557,7 +625,7 @@ export function DockWorkspace({
       const width = Math.min(origin.width, Math.max(320, (root?.width ?? 1200) - 40))
       const height = Math.min(origin.height, Math.max(220, (root?.height ?? 800) - 40))
       setLayout(
-        floatPanel(next, group.active, {
+        floatPanel(next, panel, {
           x: clampNumber(x, 8, Math.max(8, (root?.width ?? 1200) - width - 8)),
           y: clampNumber(y, 8, Math.max(8, (root?.height ?? 800) - height - 8)),
           width,
@@ -568,18 +636,47 @@ export function DockWorkspace({
       return
     }
 
-    const panel = group.active
     const ok = await onDetach(panel, point)
     if (!ok) return
     setLayout((value) => removePanel(value, panel))
-    if (group.tabs.length > 1) {
+    if (sourceGroup.tabs.length > 1) {
       notify(`「${panelMap.get(panel)?.title ?? panel}」已独立，其余标签保留在主窗口`)
     }
   }
 
   const commitDrop = (session: DragSession, target: DropTarget) => {
+    if (session.kind === 'tab') {
+      const panel = session.panel
+      if (!panel) return
+      if (target.kind === 'merge') {
+        setLayout((current) => dockPanel(current, panel, target.groupId, 'center'))
+        focusGroupRef.current = target.groupId
+      } else if (target.kind === 'reorder') {
+        setLayout((current) =>
+          reorderTab(current, session.sourceGroupId, panel, target.index),
+        )
+        focusGroupRef.current = target.groupId
+      } else if (target.kind === 'swap') {
+        setLayout((current) => swapPanelWithGroup(current, panel, target.groupId))
+        focusGroupRef.current = target.groupId
+      } else if (target.kind === 'split') {
+        setLayout((current) => dockPanel(current, panel, target.groupId, target.side))
+        focusGroupRef.current = target.groupId
+      } else if (target.kind === 'root') {
+        setLayout((current) => dockPanelToRoot(current, panel, target.side))
+      } else if (target.kind === 'corner') {
+        setLayout((current) => dockPanelToCorner(current, panel, target.corner))
+      }
+      return
+    }
+
     if (target.kind === 'merge') {
       setLayout((current) => dockGroup(current, session.id, target.groupId, 'center'))
+      focusGroupRef.current = target.groupId
+      return
+    }
+    if (target.kind === 'swap') {
+      setLayout((current) => swapGroups(current, session.id, target.groupId))
       focusGroupRef.current = target.groupId
       return
     }
@@ -603,11 +700,12 @@ export function DockWorkspace({
 
   const beginDrag = (
     event: ReactPointerEvent<HTMLElement>,
-    kind: 'group' | 'float',
+    kind: 'group' | 'tab' | 'float',
     id: string,
     tabs: PanelId[],
     active: PanelId,
     origin: Rect,
+    panel?: PanelId,
   ) => {
     const target = event.target as HTMLElement
     if (target.closest('.dock-group__action, .dock-group__menu-button')) return
@@ -616,8 +714,10 @@ export function DockWorkspace({
     const session: DragSession = {
       kind,
       id,
+      panel,
       tabs: [...tabs],
       active,
+      sourceGroupId: id,
       startX: event.clientX,
       startY: event.clientY,
       x: event.clientX,
@@ -627,7 +727,7 @@ export function DockWorkspace({
       target: null,
     }
     dragRef.current = session
-    setDrag({ kind, id, x: event.clientX, y: event.clientY, moved: false })
+    setDrag({ kind, id, panel, x: event.clientX, y: event.clientY, moved: false })
     setDropTarget(null)
     focusGroupRef.current = id
     onFocus(active)
@@ -687,6 +787,7 @@ export function DockWorkspace({
         setDrag({
           kind: latest.kind,
           id: latest.id,
+          panel: latest.panel,
           x: latest.x,
           y: latest.y,
           moved: true,
@@ -719,7 +820,8 @@ export function DockWorkspace({
       window.setTimeout(() => {
         suppressClickRef.current = false
       }, 0)
-      if (!finalTarget || finalTarget.kind === 'outside') {
+      if (!finalTarget) return
+      if (finalTarget.kind === 'outside') {
         void finishOutside(current, {
           x: upEvent.screenX,
           y: upEvent.screenY,
@@ -754,6 +856,12 @@ export function DockWorkspace({
       top: 0,
       width: 300,
       height: 220,
+    }
+    const tabElement = (event.target as HTMLElement).closest<HTMLElement>('.dock-group__tab')
+    const tabPanel = tabElement?.dataset.panel as PanelId | undefined
+    if (tabPanel && group.tabs.includes(tabPanel)) {
+      beginDrag(event, 'tab', group.id, [tabPanel], tabPanel, origin, tabPanel)
+      return
     }
     beginDrag(event, 'group', group.id, group.tabs, group.active, origin)
   }
@@ -888,7 +996,8 @@ export function DockWorkspace({
   const renderGroup = (group: TabGroup, maximized = false): ReactNode => {
     const active = panelMap.get(group.active)
     if (!active) return null
-    const dragging = drag?.moved === true && drag.id === group.id
+    const dragging =
+      drag?.moved === true && drag.kind === 'group' && drag.id === group.id
     const mergeTarget =
       dropTarget?.kind === 'merge' && dropTarget.groupId === group.id
     const maxed = maximized || layout.maximized === group.id
@@ -922,28 +1031,42 @@ export function DockWorkspace({
           title="拖动标题栏停靠；双击最大化/还原"
         >
           {group.tabs.length > 1 ? (
-            <div className="dock-group__tabs" role="tablist" aria-label="面板标签">
-              {group.tabs.map((panelId) => {
-                const panel = panelMap.get(panelId)
-                if (!panel) return null
-                return (
-                  <button
-                    type="button"
-                    role="tab"
-                    key={panelId}
-                    className={`dock-group__tab ${panelId === group.active ? 'is-active' : ''}`}
-                    aria-selected={panelId === group.active}
-                    title={panel.title}
-                    onClick={() => {
-                      if (suppressClickRef.current) return
-                      activateTab(group, panelId)
-                    }}
-                  >
-                    {panel.title}
-                  </button>
-                )
-              })}
-            </div>
+            <>
+              <span
+                className="dock-group__grip"
+                title="拖动移动整个标签组"
+                aria-hidden="true"
+              >
+                <Icon name="menu" size={11} />
+              </span>
+              <div className="dock-group__tabs" role="tablist" aria-label="面板标签">
+                {group.tabs.map((panelId) => {
+                  const panel = panelMap.get(panelId)
+                  if (!panel) return null
+                  return (
+                    <button
+                      type="button"
+                      role="tab"
+                      key={panelId}
+                      className={`dock-group__tab ${panelId === group.active ? 'is-active' : ''} ${
+                        drag?.moved && drag.kind === 'tab' && drag.panel === panelId
+                          ? 'is-dragging'
+                          : ''
+                      }`}
+                      aria-selected={panelId === group.active}
+                      data-panel={panelId}
+                      title={panel.title}
+                      onClick={() => {
+                        if (suppressClickRef.current) return
+                        activateTab(group, panelId)
+                      }}
+                    >
+                      {panel.title}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
           ) : (
             <>
               <span className="dock-group__icon" aria-hidden="true">
@@ -1244,6 +1367,16 @@ export function DockWorkspace({
 
       {layout.floating.map(renderFloating)}
 
+      {redockPreview && !drag?.moved ? (
+        <div className="dock-redock-preview" aria-live="polite" aria-atomic="true">
+          <div className="dock-redock-preview__card">
+            <span className="dock-redock-preview__eyebrow">停靠预览</span>
+            <strong>松开，收回「{redockPreview.title}」</strong>
+            <small>拖到主窗口中央才会触发</small>
+          </div>
+        </div>
+      ) : null}
+
       {drag?.moved && dropTarget && dropTarget.kind !== 'outside' ? (
         <div
           className={`dock-drop-preview dock-drop-preview--${dropTarget.kind}`}
@@ -1263,12 +1396,16 @@ export function DockWorkspace({
         <div className="dock-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden="true">
           <span className="dock-ghost__title">
             {panelMap.get(
-              findGroup(layout.root, drag.id)?.active ?? panelMap.keys().next().value ?? 'capture',
+              drag.kind === 'tab'
+                ? drag.panel ?? 'capture'
+                : findGroup(layout.root, drag.id)?.active ??
+                    panelMap.keys().next().value ??
+                    'capture',
             )?.title ?? '面板'}
           </span>
           <span className="dock-ghost__hint">
             {dropTarget?.label ??
-              (native ? '松开，放到独立窗口' : '松开，转为浮动窗口')}
+              (native ? '拖出窗口才独立' : '拖出窗口才浮动')}
           </span>
         </div>
       ) : null}

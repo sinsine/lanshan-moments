@@ -2,6 +2,7 @@ export type EventCategory = 'work' | 'life' | 'health' | 'focus' | 'other'
 export type EventStatus = 'confirmed' | 'tentative'
 export type SourceKind = 'text' | 'image' | 'manual'
 export type Attendance = 'unknown' | 'required' | 'optional' | 'not_required'
+export type AiThinking = 'off' | 'low' | 'high' | 'max'
 export type ClarifyField = 'start' | 'end' | 'location' | 'attendance' | 'title' | 'other'
 
 export interface ClarifyOption {
@@ -69,9 +70,11 @@ export interface ScheduleDocument {
 export interface AppSettings {
   baseUrl: string
   model: string
+  thinking: AiThinking
   githubOwner: string
   githubRepo: string
   githubBranch: string
+  githubAvatar: string
   githubClientId: string
   theme: 'dark' | 'light'
 }

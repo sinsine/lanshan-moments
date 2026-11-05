@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import type { AppSettings } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import type { AiThinking, AppSettings } from '../types'
 import {
   PROVIDERS,
   fetchModels,
   findProviderByBaseUrl,
   type ModelInfo,
 } from '../lib/providers'
+import { testAiConnection } from '../lib/ai'
 import { Icon } from './Icons'
 
 type SettingsTab = 'ai' | 'sync' | 'reminders' | 'data'
@@ -14,6 +15,7 @@ interface SettingsDialogProps {
   settings: AppSettings
   apiKey: string
   githubToken: string
+  githubAvatar?: string
   syncBusy: boolean
   syncMessage: string
   onClose: () => void
@@ -27,6 +29,8 @@ interface SettingsDialogProps {
   notificationStatus: string
   onToggleNotifications: () => void
   onOpenExactAlarm: () => void
+  showReminders?: boolean
+  initialTab?: SettingsTab
   embedded?: boolean
 }
 
@@ -34,6 +38,7 @@ export function SettingsDialog({
   settings,
   apiKey,
   githubToken,
+  githubAvatar = '',
   syncBusy,
   syncMessage,
   onClose,
@@ -47,9 +52,11 @@ export function SettingsDialog({
   notificationStatus,
   onToggleNotifications,
   onOpenExactAlarm,
+  showReminders = true,
+  initialTab = 'ai',
   embedded = false,
 }: SettingsDialogProps) {
-  const [tab, setTab] = useState<SettingsTab>('ai')
+  const [tab, setTab] = useState<SettingsTab>(initialTab)
   const [form, setForm] = useState(settings)
   const [modelKey, setModelKey] = useState(apiKey)
   const [repoToken, setRepoToken] = useState(githubToken)
@@ -57,6 +64,13 @@ export function SettingsDialog({
   const [models, setModels] = useState<ModelInfo[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [modelsError, setModelsError] = useState('')
+  const [modelTest, setModelTest] = useState<{
+    status: 'idle' | 'testing' | 'ok' | 'error'
+    message: string
+  }>({ status: 'idle', message: '' })
+  const [providerOpen, setProviderOpen] = useState(false)
+  const lastAutoKey = useRef(apiKey.trim())
+  const loadModelsRef = useRef<() => Promise<void>>(async () => undefined)
   const provider = findProviderByBaseUrl(form.baseUrl)
 
   const set = <K extends keyof AppSettings>(field: K, value: AppSettings[K]) => {
@@ -73,6 +87,7 @@ export function SettingsDialog({
     }
     setModelsLoading(true)
     setModelsError('')
+    setModelTest({ status: 'idle', message: '' })
     try {
       const list = await fetchModels(form.baseUrl, modelKey)
       setModels(list)
@@ -88,6 +103,66 @@ export function SettingsDialog({
     } finally {
       setModelsLoading(false)
     }
+  }
+
+  const testModel = async (model = form.model) => {
+    if (!modelKey.trim()) {
+      setModelTest({ status: 'error', message: '请先填写 API Key' })
+      return
+    }
+    if (!model.trim()) {
+      setModelTest({ status: 'error', message: '请先选择模型' })
+      return
+    }
+    setModelTest({ status: 'testing', message: `正在测试 ${model}…` })
+    try {
+      const message = await testAiConnection({
+        baseUrl: form.baseUrl,
+        model,
+        apiKey: modelKey,
+        thinking: form.thinking,
+      })
+      setModelTest({ status: 'ok', message: `${model} · ${message}` })
+    } catch (error) {
+      setModelTest({
+        status: 'error',
+        message: error instanceof Error ? error.message : '连接测试失败',
+      })
+    }
+  }
+
+  useEffect(() => {
+    loadModelsRef.current = loadModels
+  })
+
+  useEffect(() => {
+    const key = modelKey.trim()
+    if (!key || key === lastAutoKey.current) return
+    const timer = window.setTimeout(() => {
+      lastAutoKey.current = key
+      void loadModelsRef.current()
+    }, 850)
+    return () => window.clearTimeout(timer)
+  }, [modelKey, form.baseUrl])
+
+  useEffect(() => {
+    // eslint-disable-next-line react/set-state-in-effect
+    if (!showReminders && tab === 'reminders') setTab('ai')
+  }, [showReminders, tab])
+
+  const chooseModel = (id: string) => {
+    set('model', id)
+    void testModel(id)
+  }
+
+  const chooseProvider = (id: string) => {
+    const next = PROVIDERS.find((item) => item.id === id)
+    lastAutoKey.current = ''
+    set('baseUrl', next?.baseUrl ?? '')
+    setModels([])
+    setModelsError('')
+    setModelTest({ status: 'idle', message: '' })
+    setProviderOpen(false)
   }
 
   return (
@@ -131,15 +206,17 @@ export function SettingsDialog({
           >
             多设备同步
           </button>
-          <button
-            className={tab === 'reminders' ? 'is-active' : ''}
-            onClick={() => setTab('reminders')}
-            role="tab"
-            aria-selected={tab === 'reminders'}
-            type="button"
-          >
-            提醒
-          </button>
+          {showReminders ? (
+            <button
+              className={tab === 'reminders' ? 'is-active' : ''}
+              onClick={() => setTab('reminders')}
+              role="tab"
+              aria-selected={tab === 'reminders'}
+              type="button"
+            >
+              提醒
+            </button>
+          ) : null}
           <button
             className={tab === 'data' ? 'is-active' : ''}
             onClick={() => setTab('data')}
@@ -159,43 +236,69 @@ export function SettingsDialog({
               </p>
               <label className="field">
                 <span>模型提供商</span>
-                <select
-                  className="provider-select"
-                  value={provider?.id ?? 'custom'}
-                  onChange={(event) => {
-                    const next = PROVIDERS.find((item) => item.id === event.target.value)
-                    if (next) {
-                      set('baseUrl', next.baseUrl)
-                      setModels([])
-                      setModelsError('')
-                    }
-                  }}
+                <button
+                  className="provider-select provider-select--button"
+                  type="button"
+                  onClick={() => setProviderOpen(true)}
                 >
-                  <option value="custom">自定义接口</option>
-                  {PROVIDERS.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
+                  <span>{provider?.name ?? '自定义接口'}</span>
+                  <Icon name="chevron-down" size={15} />
+                </button>
                 <small>{provider?.note ?? '填写任意兼容 OpenAI 的接口地址。'}</small>
               </label>
               <label className="field">
                 <span>接口地址</span>
                 <input
                   value={form.baseUrl}
-                  onChange={(event) => set('baseUrl', event.target.value)}
+                  onChange={(event) => {
+                    set('baseUrl', event.target.value)
+                    lastAutoKey.current = ''
+                    setModels([])
+                    setModelsError('')
+                    setModelTest({ status: 'idle', message: '' })
+                  }}
                   placeholder="https://api.deepseek.com/v1"
                   spellCheck={false}
                 />
                 <small>自动补全 /chat/completions；也可填写完整地址。</small>
+              </label>
+              <label className="field">
+                <span>API Key</span>
+                <div className="field__secret">
+                  <input
+                    value={modelKey}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setModelKey(value)
+                      setModelTest({ status: 'idle', message: '' })
+                      if (!value.trim()) {
+                        lastAutoKey.current = ''
+                        setModels([])
+                        setModelsError('')
+                      }
+                    }}
+                    type={showKey ? 'text' : 'password'}
+                    placeholder="sk-..."
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button className="text-button" onClick={() => setShowKey((value) => !value)} type="button">
+                    {showKey ? '隐藏' : '显示'}
+                  </button>
+                </div>
+                <small>
+                  <Icon name="lock" size={12} /> 输入完成后会自动获取模型；Key 保存在本机 localStorage。
+                </small>
               </label>
               <div className="field">
                 <span>模型</span>
                 <div className="field__row">
                   <input
                     value={form.model}
-                    onChange={(event) => set('model', event.target.value)}
+                    onChange={(event) => {
+                      set('model', event.target.value)
+                      setModelTest({ status: 'idle', message: '' })
+                    }}
                     placeholder="deepseek-chat"
                     spellCheck={false}
                   />
@@ -208,7 +311,7 @@ export function SettingsDialog({
                     {modelsLoading ? '获取中…' : '获取模型'}
                   </button>
                 </div>
-                <small>先填 API Key，再点“获取模型”，从列表里选择。</small>
+                <small>输入 Key 后自动获取；点击模型会自动测试连接。</small>
                 {modelsError && <p className="model-error">{modelsError}</p>}
                 {models.length > 0 && (
                   <div className="model-picker">
@@ -217,7 +320,7 @@ export function SettingsDialog({
                         key={item.id}
                         type="button"
                         className={form.model === item.id ? 'is-selected' : ''}
-                        onClick={() => set('model', item.id)}
+                        onClick={() => chooseModel(item.id)}
                         title={item.ownedBy ? `${item.id} · ${item.ownedBy}` : item.id}
                       >
                         {item.id}
@@ -225,24 +328,39 @@ export function SettingsDialog({
                     ))}
                   </div>
                 )}
+                <div className="model-test-row">
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => void testModel()}
+                    disabled={modelTest.status === 'testing' || !modelKey.trim() || !form.model}
+                  >
+                    {modelTest.status === 'testing' ? '测试中…' : '测试连接'}
+                  </button>
+                  {modelTest.status !== 'idle' && (
+                    <span className={`model-test model-test--${modelTest.status}`}>
+                      {modelTest.status === 'testing' ? <span className="spinner" /> : null}
+                      {modelTest.message}
+                    </span>
+                  )}
+                </div>
               </div>
               <label className="field">
-                <span>API Key</span>
-                <div className="field__secret">
-                  <input
-                    value={modelKey}
-                    onChange={(event) => setModelKey(event.target.value)}
-                    type={showKey ? 'text' : 'password'}
-                    placeholder="sk-..."
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  <button className="text-button" onClick={() => setShowKey((value) => !value)} type="button">
-                    {showKey ? '隐藏' : '显示'}
-                  </button>
-                </div>
+                <span>思考强度</span>
+                <select
+                  value={form.thinking}
+                  onChange={(event) => {
+                    set('thinking', event.target.value as AiThinking)
+                    setModelTest({ status: 'idle', message: '' })
+                  }}
+                >
+                  <option value="off">关闭（推荐，JSON 更稳定）</option>
+                  <option value="low">低</option>
+                  <option value="high">高</option>
+                  <option value="max">最高</option>
+                </select>
                 <small>
-                  <Icon name="lock" size={12} /> 保存在本机 localStorage，关闭应用后仍保留；请只在个人设备使用。
+                  仅 DeepSeek 生效。关闭时发送 <code>thinking: disabled</code>；开启后先思考再输出最终 JSON。
                 </small>
               </label>
               <div className="notice">
@@ -260,6 +378,31 @@ export function SettingsDialog({
                 日程写进你自己的 GitHub 私有仓库，不经过第三方服务器。这是参考 DarkCube 的 local-first
                 方案，但改为事件级合并，不再让远端覆盖本地。
               </p>
+              {githubToken && form.githubOwner ? (
+                <div className="github-account">
+                  {githubAvatar ? (
+                    <img
+                      className="github-account__avatar"
+                      src={githubAvatar}
+                      alt=""
+                      width={40}
+                      height={40}
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className="github-account__avatar github-account__avatar--fallback">
+                      {form.githubOwner.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <div className="github-account__text">
+                    <strong>@{form.githubOwner}</strong>
+                    <small>
+                      已连接 · {form.githubRepo || 'lanshan-schedule'}
+                    </small>
+                  </div>
+                  <span className="github-account__badge">已登录</span>
+                </div>
+              ) : null}
               <button
                 className="github-connect-banner"
                 type="button"
@@ -357,7 +500,7 @@ export function SettingsDialog({
             </>
           )}
 
-          {tab === 'reminders' && (
+          {showReminders && tab === 'reminders' && (
             <>
               <p className="settings-lede">
                 在日程开始前 10 分钟提醒。Android 端会申请通知权限；ColorOS 还需要允许后台行为和自启动，提醒才稳定。
@@ -467,6 +610,71 @@ export function SettingsDialog({
           </div>
         </footer>
       </div>
+
+      {providerOpen ? (
+        <div
+          className="provider-picker-backdrop"
+          onMouseDown={() => setProviderOpen(false)}
+        >
+          <div
+            className="provider-picker"
+            role="dialog"
+            aria-modal="true"
+            aria-label="选择模型提供商"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="provider-picker__head">
+              <div>
+                <p className="eyebrow">模型接口</p>
+                <h3>选择提供商</h3>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="关闭"
+                onClick={() => setProviderOpen(false)}
+              >
+                <Icon name="x" size={17} />
+              </button>
+            </header>
+            <div className="provider-picker__list">
+              <button
+                type="button"
+                className={`provider-option ${!provider ? 'is-selected' : ''}`}
+                onClick={() => chooseProvider('custom')}
+              >
+                <span className="provider-option__mark">自</span>
+                <span className="provider-option__text">
+                  <strong>自定义接口</strong>
+                  <small>任意 OpenAI Chat Completions 兼容端点</small>
+                </span>
+                {!provider ? <Icon name="check" size={16} /> : null}
+              </button>
+              {PROVIDERS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`provider-option ${
+                    provider?.id === item.id ? 'is-selected' : ''
+                  }`}
+                  onClick={() => chooseProvider(item.id)}
+                >
+                  <span className="provider-option__mark">
+                    {item.name.slice(0, 1)}
+                  </span>
+                  <span className="provider-option__text">
+                    <strong>{item.name}</strong>
+                    <small>{item.note}</small>
+                  </span>
+                  {provider?.id === item.id ? (
+                    <Icon name="check" size={16} />
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

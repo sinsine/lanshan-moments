@@ -233,11 +233,13 @@ export function createDefaultLayout(available: readonly PanelId[]): LayoutState 
   } else if (groups.length === 3) {
     root = makeSplit('row', 34, makeSplit('column', 50, groups[0], groups[1]), groups[2])
   } else if (groups.length >= 4) {
+    // First-launch layout matches the product reference: capture/inbox on the
+    // left, timeline on top-right and the week overview below it.
     root = makeSplit(
       'row',
-      28,
-      makeSplit('column', 46, groups[0], groups[1]),
-      makeSplit('column', 38, groups[2], groups[3]),
+      24,
+      makeSplit('column', 50, groups[0], groups[1]),
+      makeSplit('column', 65, groups[3], groups[2]),
     )
   }
 
@@ -320,12 +322,109 @@ export function toggleMaximized(layout: LayoutState, groupId: string): LayoutSta
   return setMaximized(layout, layout.maximized === groupId ? null : groupId)
 }
 
-export function mergeGroupInto(
+function swapGroupContents(
+  node: DockNode,
+  firstId: string,
+  secondId: string,
+  first: TabGroup,
+  second: TabGroup,
+): DockNode {
+  if (node.kind !== 'tabs') {
+    const left = swapGroupContents(node.first, firstId, secondId, first, second)
+    const right = swapGroupContents(node.second, firstId, secondId, first, second)
+    if (left === node.first && right === node.second) return node
+    return { ...node, first: left, second: right }
+  }
+  if (node.id === firstId) return { ...node, tabs: second.tabs, active: second.active }
+  if (node.id === secondId) return { ...node, tabs: first.tabs, active: first.active }
+  return node
+}
+
+/** Center drop: swap the contents of two dock leaves in place. */
+export function swapGroups(
   layout: LayoutState,
   sourceId: string,
   targetId: string,
 ): LayoutState {
   if (sourceId === targetId) return layout
+  const source = findGroup(layout.root, sourceId)
+  const target = findGroup(layout.root, targetId)
+  if (!source || !target || !layout.root) return layout
+  const root = swapGroupContents(layout.root, sourceId, targetId, source, target)
+  return { ...layout, root, maximized: null, savedAt: Date.now() }
+}
+
+/**
+ * Center drop for a single tab: swap that tab with the target leaf's active tab,
+ * so both leaves keep their geometry and each side remains a valid window.
+ */
+export function swapPanelWithGroup(
+  layout: LayoutState,
+  panel: PanelId,
+  targetId: string,
+): LayoutState {
+  const source = findGroupOfPanel(layout.root, panel)
+  const target = findGroup(layout.root, targetId)
+  if (!source || !target || source.id === target.id || !layout.root) return layout
+  const targetPanel = target.active
+  if (!target.tabs.includes(targetPanel)) return layout
+
+  const sourceTabs = source.tabs
+    .filter((item) => item !== panel)
+    .concat(targetPanel)
+  const targetTabs = target.tabs
+    .filter((item) => item !== targetPanel)
+    .concat(panel)
+  const sourceActive = source.active === panel ? targetPanel : source.active
+  let root = updateGroup(layout.root, source.id, (group) => ({
+    ...group,
+    tabs: sourceTabs,
+    active: sourceTabs.includes(sourceActive) ? sourceActive : sourceTabs[0],
+  }))
+  root = updateGroup(root, target.id, (group) => ({
+    ...group,
+    tabs: targetTabs,
+    active: panel,
+  }))
+  return { ...layout, root, maximized: null, savedAt: Date.now() }
+}
+
+/** Reorder a tab inside its own group. index is counted after removing the tab. */
+export function reorderTab(
+  layout: LayoutState,
+  groupId: string,
+  panel: PanelId,
+  index: number,
+): LayoutState {
+  const group = findGroup(layout.root, groupId)
+  if (!group || !group.tabs.includes(panel)) return layout
+  const rest = group.tabs.filter((item) => item !== panel)
+  const target = Math.max(0, Math.min(rest.length, index))
+  rest.splice(target, 0, panel)
+  if (
+    rest.length === group.tabs.length &&
+    rest.every((item, position) => item === group.tabs[position]) &&
+    group.active === panel
+  ) {
+    return layout
+  }
+  if (!layout.root) return layout
+  return {
+    ...layout,
+    root: updateGroup(layout.root, groupId, (current) => ({
+      ...current,
+      tabs: rest,
+      active: panel,
+    })),
+    savedAt: Date.now(),
+  }
+}
+
+export function mergeGroupInto(
+  layout: LayoutState,
+  sourceId: string,
+  targetId: string,
+): LayoutState {  if (sourceId === targetId) return layout
   const source = findGroup(layout.root, sourceId)
   const target = findGroup(layout.root, targetId)
   if (!source || !target) return layout
@@ -386,7 +485,111 @@ export function dockGroupToRoot(
   }
 }
 
+/**
+ * Move a single tab (not its whole group) into another dock leaf. This is what
+ * makes dragging a tab feel like moving that tab's window rather than the
+ * currently active panel of the group.
+ */
+export function dockPanel(
+  layout: LayoutState,
+  panel: PanelId,
+  targetId: string,
+  side: DockSide,
+): LayoutState {
+  const source = findGroupOfPanel(layout.root, panel)
+  if (!source) return layout
+  if (source.id === targetId) {
+    if (side === 'center') return setActiveTab(layout, source.id, panel)
+    // Splitting a tab away from its only group would remove the target.
+    if (source.tabs.length <= 1) return setActiveTab(layout, source.id, panel)
+  }
+
+  const without = removePanel(layout, panel)
+  const target = findGroup(without.root, targetId)
+  if (!target) return layout
+
+  if (side === 'center') {
+    return {
+      ...without,
+      root: updateGroup(without.root as DockNode, targetId, (group) => ({
+        ...group,
+        tabs: dedupePanels([...group.tabs, panel]),
+        active: panel,
+      })),
+      maximized: without.maximized === source.id ? targetId : without.maximized,
+      savedAt: Date.now(),
+    }
+  }
+
+  const group = makeGroup([panel])
+  const root = insertGroupAt(without.root as DockNode, targetId, side, group)
+  if (root === without.root) return layout
+  return {
+    ...without,
+    root,
+    maximized: without.maximized === source.id ? null : without.maximized,
+    savedAt: Date.now(),
+  }
+}
+
+export function dockPanelToRoot(
+  layout: LayoutState,
+  panel: PanelId,
+  side: Exclude<DockSide, 'center'>,
+): LayoutState {
+  const source = findGroupOfPanel(layout.root, panel)
+  if (!source) return layout
+  const without = removePanel(layout, panel)
+  const group = makeGroup([panel])
+  const root = without.root ? splitRoot(without.root, side, group) : group
+  return { ...without, root, maximized: null, savedAt: Date.now() }
+}
+
+export function dockPanelToCorner(
+  layout: LayoutState,
+  panel: PanelId,
+  corner: DockCorner,
+): LayoutState {
+  const source = findGroupOfPanel(layout.root, panel)
+  if (!source) return layout
+  const without = removePanel(layout, panel)
+  const group = makeGroup([panel])
+  return { ...cornerWithGroup(without, group, corner), maximized: null }
+}
+
 export type DockCorner = 'left-top' | 'left-bottom' | 'right-top' | 'right-bottom'
+
+/** The source group must already be absent from layout.root. */
+function cornerWithGroup(
+  layout: LayoutState,
+  source: TabGroup,
+  corner: DockCorner,
+): LayoutState {
+  const rest = collectGroups(layout.root)
+  if (rest.length === 0) {
+    return { ...layout, root: source, savedAt: Date.now() }
+  }
+
+  const mate = rest[0]
+  const remainder = removeGroupNode(layout.root, mate.id)
+  const top = corner === 'left-top' || corner === 'right-top'
+  const left = corner === 'left-top' || corner === 'left-bottom'
+  const stack = makeSplit('column', 50, top ? source : mate, top ? mate : source)
+
+  let root: DockNode
+  if (!remainder) {
+    root = stack
+  } else {
+    root = makeSplit('row', 50, left ? stack : remainder, left ? remainder : stack)
+  }
+
+  return {
+    ...layout,
+    root,
+    maximized: layout.maximized === source.id ? null : layout.maximized,
+    savedAt: Date.now(),
+  }
+}
 
 /**
  * Corner snap: the dragged group takes one quarter, the closest other group
@@ -403,28 +606,7 @@ export function dockGroupToCorner(
   if (!source) return layout
   const without = removeGroupNode(layout.root, sourceId)
   if (!without) return layout
-  const rest = collectGroups(without)
-  if (rest.length === 0) return { ...layout, root: source, savedAt: Date.now() }
-
-  const mate = rest[0]
-  const remainder = removeGroupNode(without, mate.id)
-  const top = corner === 'left-top' || corner === 'right-top'
-  const left = corner === 'left-top' || corner === 'left-bottom'
-  const stack = makeSplit('column', 50, top ? source : mate, top ? mate : source)
-
-  let root: DockNode
-  if (!remainder) {
-    root = stack
-  } else {
-    root = makeSplit('row', 50, left ? stack : remainder, left ? remainder : stack)
-  }
-
-  return {
-    ...layout,
-    root,
-    maximized: layout.maximized === sourceId ? null : layout.maximized,
-    savedAt: Date.now(),
-  }
+  return cornerWithGroup({ ...layout, root: without }, source, corner)
 }
 
 export function setActiveTab(

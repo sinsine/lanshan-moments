@@ -13,7 +13,7 @@ import { AUTHOR_URL, DEFAULT_GITHUB_CLIENT_ID, REPO_URL } from './lib/config'
 import { checkLatestRelease, type UpdateInfo } from './lib/update'
 import { openExternal } from './lib/native'
 import { TopNav } from './components/TopNav'
-import { WindowFrame } from './components/WindowFrame'
+import { ChangelogDialog } from './components/ChangelogDialog'
 import { MobileWeekGrid } from './components/MobileWeekGrid'
 import { DockWorkspace } from './components/DockWorkspace'
 import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
@@ -53,7 +53,9 @@ import { EventDialog } from './components/EventDialog'
 import { Icon } from './components/Icons'
 
 type InspectorTab = 'drafts' | 'json'
-type MobileSheet = 'capture' | 'review' | null
+type MobileSheet = 'review' | null
+type MobileView = 'day' | 'week' | 'add' | 'me'
+type DesktopSettingsTab = 'ai' | 'sync' | 'data'
 type ToastState = {
   message: string
   tone: 'default' | 'error'
@@ -78,33 +80,6 @@ function sortEvents(events: ScheduleEvent[]): ScheduleEvent[] {
 
 function isMobile(): boolean {
   return window.matchMedia('(max-width: 980px)').matches
-}
-
-function initialWindowLayout() {
-  const width = Math.max(980, window.innerWidth)
-  const height = Math.max(640, window.innerHeight - 44)
-  const gap = 8
-  const left = Math.min(390, Math.max(330, width * 0.27))
-  const middle = width - left - gap * 3
-  const upper = (height - gap * 3) * 0.46
-  const weekHeight = (height - gap * 3) * 0.38
-  return {
-    capture: { x: gap, y: gap, width: left, height: upper },
-    inbox: { x: gap, y: gap * 2 + upper, width: left, height: height - upper - gap * 3 },
-    week: { x: gap * 2 + left, y: gap, width: middle, height: weekHeight },
-    timeline: {
-      x: gap * 2 + left,
-      y: gap * 2 + weekHeight,
-      width: middle,
-      height: height - weekHeight - gap * 3,
-    },
-    settings: {
-      x: Math.max(24, (width - 780) / 2),
-      y: Math.max(20, (height - 700) / 2),
-      width: Math.min(780, width - 48),
-      height: Math.min(720, height - 40),
-    },
-  }
 }
 
 function windowLabel(id: string): string {
@@ -135,23 +110,15 @@ export default function App() {
   const [apiKey, setApiKey] = useState(loadApiKey)
   const [githubToken, setGithubToken] = useState(loadGithubToken)
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()))
-  const [viewMode, setViewMode] = useState<'day' | 'week'>('week')
+  const [viewMode, setViewMode] = useState<MobileView>('week')
   const [panelVisible, setPanelVisible] = useState({
     timeline: true,
     week: true,
     inbox: true,
     capture: true,
   })
-  const [windowZ, setWindowZ] = useState<Record<string, number>>({
-    capture: 1,
-    week: 2,
-    timeline: 3,
-    inbox: 4,
-    settings: 100,
-  })
-  const [, setZCounter] = useState(101)
-  const [layoutEpoch, setLayoutEpoch] = useState(0)
   const [nativeV3, setNativeV3] = useState(false)
+  const [dockPreview, setDockPreview] = useState<{ title: string } | null>(null)
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -160,6 +127,8 @@ export default function App() {
   const [stage, setStage] = useState('正在拆解时间表达…')
   const [engineLabel, setEngineLabel] = useState('离线规则')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<DesktopSettingsTab>('ai')
+  const [changelogOpen, setChangelogOpen] = useState(false)
   const [githubDialogOpen, setGithubDialogOpen] = useState(false)
   const [updateDialog, setUpdateDialog] = useState<{
     checking: boolean
@@ -185,6 +154,11 @@ export default function App() {
   const syncConnected = Boolean(
     settings.githubOwner && settings.githubRepo && githubToken,
   )
+  const githubAvatar =
+    settings.githubAvatar ||
+    (settings.githubOwner
+      ? `https://github.com/${encodeURIComponent(settings.githubOwner)}.png?size=96`
+      : '')
   const activeEvent = events.find((event) => event.id === activeEventId) ?? null
   const selectedDrafts = drafts.filter((draft) => draft.selected)
   const previewEvents = selectedDrafts.map((draft) => {
@@ -213,12 +187,6 @@ export default function App() {
       cancelled = true
     }
   }, [liveEvents, notificationsOn])
-
-  useEffect(() => {
-    const onResize = () => setLayoutEpoch((epoch) => epoch + 1)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -297,6 +265,40 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (!nativeV3) return
+    const panelParam = new URLSearchParams(window.location.search).get('panel')
+    let cancelled = false
+    const timer = window.setInterval(() => {
+      void fetch('/api/dock-preview', { cache: 'no-store' })
+        .then((response) => response.json())
+        .then((payload: { active?: boolean; panel?: string; title?: string }) => {
+          if (cancelled) return
+          if (panelParam) {
+            const nextTitle =
+              payload.active && payload.panel === panelParam
+                ? payload.title || '面板'
+                : null
+            setDockPreview((current) => {
+              if (!nextTitle) return current ? null : current
+              return current?.title === nextTitle ? current : { title: nextTitle }
+            })
+          } else {
+            const nextTitle = payload.active ? payload.title || '面板' : null
+            setDockPreview((current) => {
+              if (!nextTitle) return current ? null : current
+              return current?.title === nextTitle ? current : { title: nextTitle }
+            })
+          }
+        })
+        .catch(() => undefined)
+    }, 120)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [nativeV3])
+
+  useEffect(() => {
+    if (!nativeV3) return
     // Detached panel windows share this bundle. They must not consume the
     // attach queue; only the main window restores panels into its dock.
     if (new URLSearchParams(window.location.search).has('panel')) return
@@ -344,12 +346,16 @@ export default function App() {
 
   useEffect(() => {
     const locked =
-      settingsOpen || githubDialogOpen || Boolean(activeEvent) || mobileSheet !== null
+      settingsOpen ||
+      changelogOpen ||
+      githubDialogOpen ||
+      Boolean(activeEvent) ||
+      mobileSheet !== null
     document.body.style.overflow = locked ? 'hidden' : ''
     return () => {
       document.body.style.overflow = ''
     }
-  }, [settingsOpen, githubDialogOpen, activeEvent, mobileSheet])
+  }, [settingsOpen, changelogOpen, githubDialogOpen, activeEvent, mobileSheet])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -360,6 +366,7 @@ export default function App() {
         target?.getAttribute('contenteditable') === 'true'
       if (event.key === 'Escape') {
         setSettingsOpen(false)
+        setChangelogOpen(false)
         setGithubDialogOpen(false)
         setActiveEventId(null)
         setMobileSheet(null)
@@ -367,7 +374,7 @@ export default function App() {
       }
       if (event.key.toLowerCase() === 'n' && !editing && !event.metaKey && !event.ctrlKey) {
         event.preventDefault()
-        if (isMobile()) setMobileSheet('capture')
+        if (isMobile()) setViewMode('add')
         else
           document
             .querySelector<HTMLTextAreaElement>('.capture:not(.capture--compact) textarea')
@@ -392,7 +399,7 @@ export default function App() {
 
   const handleSample = () => {
     setInput(SAMPLE)
-    if (isMobile()) setMobileSheet('capture')
+    if (isMobile()) setViewMode('add')
     window.setTimeout(() => {
       const textarea = document.querySelector<HTMLTextAreaElement>(
         isMobile() ? '.capture--compact textarea' : '.capture:not(.capture--compact) textarea',
@@ -417,7 +424,11 @@ export default function App() {
     if (parsing || (!input.trim() && !image)) return
     if (image && !hasAiKey && !input.trim()) {
       notify('图片识别需要先在设置里配置支持视觉的模型', { tone: 'error' })
-      setSettingsOpen(true)
+      if (isMobile()) setViewMode('me')
+      else {
+        setSettingsTab('ai')
+        setSettingsOpen(true)
+      }
       return
     }
     setStage(hasAiKey ? '正在读取这段线索…' : '正在拆解时间表达…')
@@ -445,7 +456,12 @@ export default function App() {
           const result = await parseWithAi(
             input,
             image,
-            { baseUrl: settings.baseUrl, model: settings.model, apiKey },
+            {
+              baseUrl: settings.baseUrl,
+              model: settings.model,
+              apiKey,
+              thinking: settings.thinking,
+            },
             deviceId,
           )
           setDrafts(result.drafts)
@@ -538,22 +554,33 @@ export default function App() {
 
   const handleDeleteEvent = (event: ScheduleEvent) => {
     const previous = events
+    // eslint-disable-next-line react/purity
     const timestamp = new Date().toISOString()
-    setEvents((current) =>
-      current.map((item) =>
-        item.id === event.id
-          ? { ...item, deletedAt: timestamp, updatedAt: timestamp, rev: item.rev + 1 }
-          : item,
-      ),
+    const nextEvents = events.map((item) =>
+      item.id === event.id
+        ? { ...item, deletedAt: timestamp, updatedAt: timestamp, rev: item.rev + 1 }
+        : item,
     )
+    setEvents(nextEvents)
     setActiveEventId(null)
     notify(`“${event.title}”已移出时间轴`, {
       actionLabel: '撤销',
       action: () => {
-        setEvents(previous)
+        // Restore as a newer live revision; otherwise the remote tombstone
+        // (which already has a later timestamp) would win on the next sync.
+        // eslint-disable-next-line react/purity
+        const restoredAt = new Date().toISOString()
+        const restored = previous.map((item) =>
+          item.id === event.id
+            ? { ...item, deletedAt: null, updatedAt: restoredAt, rev: item.rev + 1 }
+            : item,
+        )
+        setEvents(restored)
         setToast(null)
+        if (syncConnected) void handleSync(settings, githubToken, restored)
       },
     })
+    if (syncConnected) void handleSync(settings, githubToken, nextEvents)
   }
 
   const openGithubConnect = () => {
@@ -585,22 +612,8 @@ export default function App() {
       return false
     }
   }
-  const bringWindowToFront = (id: string) => {
-    setZCounter((current) => {
-      const next = current + 1
-      setWindowZ((z) => ({ ...z, [id]: next }))
-      return next
-    })
-  }
-
   const toggleWindow = (id: string) => {
-    if (id === 'settings') {
-      if (!settingsOpen) bringWindowToFront('settings')
-      setSettingsOpen((current) => !current)
-      return
-    }
     const next = !panelVisible[id as keyof typeof panelVisible]
-    if (next) bringWindowToFront(id)
     setPanelVisible((current) => ({ ...current, [id]: next }))
   }
 
@@ -655,7 +668,7 @@ export default function App() {
   const handleCheckUpdates = async () => {
     setUpdateDialog({ checking: true })
     try {
-      const info = await checkLatestRelease()
+      const info = await checkLatestRelease(githubToken)
       setUpdateDialog({ checking: false, info })
     } catch (error) {
       setUpdateDialog({
@@ -735,10 +748,18 @@ export default function App() {
     notify('设置已保存在这台设备上')
   }
 
-  const handleSync = async (syncSettings = settings, token = githubToken) => {
+  const handleSync = async (
+    syncSettings = settings,
+    token = githubToken,
+    sourceEvents = events,
+  ) => {
     if (!syncSettings.githubOwner || !syncSettings.githubRepo || !token) {
       notify('请先填写 GitHub 用户名、私有仓库和 Token', { tone: 'error' })
-      setSettingsOpen(true)
+      if (isMobile()) setViewMode('me')
+      else {
+        setSettingsTab('sync')
+        setSettingsOpen(true)
+      }
       return
     }
     setSyncing(true)
@@ -751,7 +772,7 @@ export default function App() {
           branch: syncSettings.githubBranch || 'main',
           token,
         },
-        makeScheduleDocument(events, deviceId),
+        makeScheduleDocument(sourceEvents, deviceId),
       )
       setEvents(sortEvents(result.document.events))
       setLastSyncAt(new Date())
@@ -785,6 +806,7 @@ export default function App() {
       githubOwner: payload.owner,
       githubRepo: payload.repo,
       githubBranch: payload.branch,
+      githubAvatar: payload.avatarUrl,
     }
     setSettings(next)
     saveSettings(next)
@@ -868,22 +890,27 @@ export default function App() {
     stage,
     hasAiKey,
     model: settings.model,
-    onOpenSettings: () => setSettingsOpen(true),
+    onOpenSettings: () => {
+      if (isMobile()) {
+        setViewMode('me')
+      } else {
+        setSettingsTab('ai')
+        setSettingsOpen(true)
+      }
+    },
   }
 
   const detachedPanel = new URLSearchParams(window.location.search).get('panel')
-  const layout = initialWindowLayout()
   const topNavWindows = [
     { id: 'timeline' as const, label: windowLabel('timeline'), visible: panelVisible.timeline },
     { id: 'week' as const, label: windowLabel('week'), visible: panelVisible.week },
     { id: 'inbox' as const, label: windowLabel('inbox'), visible: panelVisible.inbox },
     { id: 'capture' as const, label: windowLabel('capture'), visible: panelVisible.capture },
-    { id: 'settings' as const, label: windowLabel('settings'), visible: settingsOpen },
   ]
 
   const openCapture = () => {
     if (isMobile()) {
-      setMobileSheet('capture')
+      setViewMode('add')
       return
     }
     setPanelVisible((current) => ({ ...current, capture: true }))
@@ -962,6 +989,7 @@ export default function App() {
           syncLabel={syncLabel}
           syncConnected={syncConnected}
           syncing={syncing}
+          horizontal
         />
       ) : detachedPanel === 'inbox' ? (
         <Inspector
@@ -1022,6 +1050,15 @@ export default function App() {
           </div>
         </header>
         <div className="detached-content">{content}</div>
+        {dockPreview ? (
+          <div className="detached-redock-preview" aria-live="polite" aria-atomic="true">
+            <div className="detached-redock-preview__card">
+              <span>停靠预览</span>
+              <strong>松开，收回主窗口</strong>
+              <small>「{dockPreview.title}」将重新并入工作区</small>
+            </div>
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -1041,11 +1078,17 @@ export default function App() {
           onOpenAbout={() => void openExternal(REPO_URL)}
           onOpenAuthor={() => void openExternal(AUTHOR_URL)}
           onCheckUpdates={() => void handleCheckUpdates()}
+          onOpenChangelog={() => setChangelogOpen(true)}
           onExit={handleExit}
+          onOpenSettingsTab={(tab) => {
+            setSettingsTab(tab)
+            setSettingsOpen(true)
+          }}
           onEditAction={(action) => void runEditAction(action)}
           syncLabel={syncLabel}
           syncConnected={syncConnected}
           syncing={syncing}
+          githubAvatar={githubAvatar}
           onSync={() => void handleSync()}
           onOpenSyncSettings={openGithubConnect}
           theme={settings.theme}
@@ -1068,6 +1111,7 @@ export default function App() {
         <div className="window-workspace">
           <DockWorkspace
             native={nativeV3}
+            redockPreview={dockPreview}
             panels={[
               ...(panelVisible.capture
                 ? [{ id: 'capture' as const, title: '添加日程', icon: <Icon name="plus" size={14} />, content: <CapturePanel {...captureProps} /> }]
@@ -1140,6 +1184,7 @@ export default function App() {
                         syncLabel={syncLabel}
                         syncConnected={syncConnected}
                         syncing={syncing}
+                        horizontal
                       />
                     ),
                   }]
@@ -1147,45 +1192,35 @@ export default function App() {
             ]}
             onClose={(id) => setPanelVisible((current) => ({ ...current, [id]: false }))}
             onDetach={detachPanel}
-            onFocus={(id) => bringWindowToFront(id)}
+            onFocus={() => undefined}
             onTogglePanel={(id) => toggleWindow(id)}
             onNotify={(message, tone) => notify(message, { tone })}
           />
-          {settingsOpen && (
-            <WindowFrame
-              key={`settings-${layoutEpoch}`}
-              id="settings"
-              title="设置"
-              icon={<Icon name="settings" size={15} />}
-              initial={layout.settings}
-              zIndex={windowZ.settings}
-              floating
-              onFocus={() => bringWindowToFront('settings')}
+          {settingsOpen && !isMobile() && (
+            <SettingsDialog
+              settings={settings}
+              apiKey={apiKey}
+              githubToken={githubToken}
+              githubAvatar={githubAvatar}
+              syncBusy={syncing}
+              syncMessage={syncMessage}
               onClose={() => setSettingsOpen(false)}
-            >
-              <SettingsDialog
-                embedded
-                settings={settings}
-                apiKey={apiKey}
-                githubToken={githubToken}
-                syncBusy={syncing}
-                syncMessage={syncMessage}
-                onClose={() => setSettingsOpen(false)}
-                onSave={handleSaveSettings}
-                onSync={(nextSettings, token) => {
-                  saveGithubToken(token)
-                  handleSync(nextSettings, token)
-                }}
-                onExport={handleExport}
-                onImport={handleImport}
-                onClear={handleClear}
-                onOpenConnect={openGithubConnect}
-                notificationsOn={notificationsOn}
-                notificationStatus={notificationStatus}
-                onToggleNotifications={handleToggleNotifications}
-                onOpenExactAlarm={handleOpenExactAlarm}
-              />
-            </WindowFrame>
+              onSave={handleSaveSettings}
+              onSync={(nextSettings, token) => {
+                saveGithubToken(token)
+                handleSync(nextSettings, token)
+              }}
+              onExport={handleExport}
+              onImport={handleImport}
+              onClear={handleClear}
+              onOpenConnect={openGithubConnect}
+              notificationsOn={notificationsOn}
+              notificationStatus={notificationStatus}
+              onToggleNotifications={handleToggleNotifications}
+              onOpenExactAlarm={handleOpenExactAlarm}
+              showReminders={false}
+              initialTab={settingsTab}
+            />
           )}
         </div>
       </div>
@@ -1202,14 +1237,14 @@ export default function App() {
               setViewMode('day')
             }}
             onEventClick={(event) => setActiveEventId(event.id)}
-            onAdd={() => setMobileSheet('capture')}
+            onAdd={() => setViewMode('add')}
           />
-        ) : (
+        ) : viewMode === 'day' ? (
           <>
             <header className="mobile-head mobile-head--v3">
               <button
                 className="mobile-head__plus"
-                onClick={() => setMobileSheet('capture')}
+                onClick={() => setViewMode('add')}
                 aria-label="添加日程"
                 type="button"
               >
@@ -1259,7 +1294,7 @@ export default function App() {
               onSelectDate={setSelectedDate}
               onShiftWeek={shiftWeek}
               onToday={() => setSelectedDate(startOfDay(new Date()))}
-              onAdd={() => setMobileSheet('capture')}
+              onAdd={() => setViewMode('add')}
               onEventClick={(event) => setActiveEventId(event.id)}
               onSync={() => handleSync()}
               onOpenSettings={openGithubConnect}
@@ -1268,22 +1303,63 @@ export default function App() {
               syncing={syncing}
             />
           </>
+        ) : viewMode === 'add' ? (
+          <div className="mobile-page mobile-page--add">
+            <header className="mobile-page__head">
+              <p className="eyebrow">收集</p>
+              <h1>添加日程</h1>
+            </header>
+            <div className="mobile-page__scroll">
+              <CapturePanel {...captureProps} compact />
+            </div>
+          </div>
+        ) : (
+          <div className="mobile-page mobile-page--me">
+            <div className="mobile-page__scroll mobile-page__scroll--me">
+              <SettingsDialog
+                embedded
+                settings={settings}
+                apiKey={apiKey}
+                githubToken={githubToken}
+                githubAvatar={githubAvatar}
+                syncBusy={syncing}
+                syncMessage={syncMessage}
+                onClose={() => setViewMode('week')}
+                onSave={handleSaveSettings}
+                onSync={(nextSettings, token) => {
+                  saveGithubToken(token)
+                  handleSync(nextSettings, token)
+                }}
+                onExport={handleExport}
+                onImport={handleImport}
+                onClear={handleClear}
+                onOpenConnect={openGithubConnect}
+                notificationsOn={notificationsOn}
+                notificationStatus={notificationStatus}
+                onToggleNotifications={handleToggleNotifications}
+                onOpenExactAlarm={handleOpenExactAlarm}
+                showReminders
+              />
+            </div>
+          </div>
         )}
 
-        <button
-          className="mobile-inbox-fab"
-          type="button"
-          onClick={() => {
-            setTab('drafts')
-            setMobileSheet('review')
-          }}
-          aria-label="打开整理箱"
-        >
-          <Icon name="inbox" size={17} />
-          {drafts.length > 0 && <i>{drafts.length}</i>}
-        </button>
+        {(viewMode === 'week' || viewMode === 'day') && (
+          <button
+            className="mobile-inbox-fab"
+            type="button"
+            onClick={() => {
+              setTab('drafts')
+              setMobileSheet('review')
+            }}
+            aria-label="打开整理箱"
+          >
+            <Icon name="inbox" size={17} />
+            {drafts.length > 0 && <i>{drafts.length}</i>}
+          </button>
+        )}
 
-        <nav className="mobile-nav mobile-nav--three" aria-label="移动端导航">
+        <nav className="mobile-nav mobile-nav--four" aria-label="移动端导航">
           <button
             className={viewMode === 'week' ? 'is-active' : ''}
             type="button"
@@ -1300,29 +1376,25 @@ export default function App() {
             <Icon name="calendar" size={19} />
             <span>时间轴</span>
           </button>
-          <button type="button" onClick={() => setSettingsOpen(true)}>
+          <button
+            className={viewMode === 'add' ? 'is-active' : ''}
+            type="button"
+            onClick={() => setViewMode('add')}
+            aria-label="添加日程"
+          >
+            <Icon name="plus" size={19} />
+            <span>添加</span>
+          </button>
+          <button
+            className={viewMode === 'me' ? 'is-active' : ''}
+            type="button"
+            onClick={() => setViewMode('me')}
+          >
             <Icon name="settings" size={19} />
             <span>我的</span>
           </button>
         </nav>
       </div>
-
-      {mobileSheet === 'capture' && (
-        <div className="sheet-backdrop" onMouseDown={() => setMobileSheet(null)}>
-          <div className="mobile-sheet" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="mobile-sheet__grab" />
-            <button
-              className="icon-button mobile-sheet__close"
-              onClick={() => setMobileSheet(null)}
-              aria-label="关闭"
-              type="button"
-            >
-              <Icon name="x" size={18} />
-            </button>
-            <CapturePanel {...captureProps} compact />
-          </div>
-        </div>
-      )}
 
       {mobileSheet === 'review' && (
         <div className="sheet-backdrop" onMouseDown={() => setMobileSheet(null)}>
@@ -1352,29 +1424,7 @@ export default function App() {
         </div>
       )}
 
-      {settingsOpen && isMobile() && (
-        <SettingsDialog
-          settings={settings}
-          apiKey={apiKey}
-          githubToken={githubToken}
-          syncBusy={syncing}
-          syncMessage={syncMessage}
-          onClose={() => setSettingsOpen(false)}
-          onSave={handleSaveSettings}
-          onSync={(nextSettings, token) => {
-            saveGithubToken(token)
-            handleSync(nextSettings, token)
-          }}
-          onExport={handleExport}
-          onImport={handleImport}
-          onClear={handleClear}
-          onOpenConnect={openGithubConnect}
-          notificationsOn={notificationsOn}
-          notificationStatus={notificationStatus}
-          onToggleNotifications={handleToggleNotifications}
-          onOpenExactAlarm={handleOpenExactAlarm}
-        />
-      )}
+      <ChangelogDialog open={changelogOpen} onClose={() => setChangelogOpen(false)} />
 
       {updateDialog && (
         <div
