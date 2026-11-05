@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import type {
   AppSettings,
   AttachedImage,
@@ -15,6 +15,7 @@ import { openExternal } from './lib/native'
 import { TopNav } from './components/TopNav'
 import { WindowFrame } from './components/WindowFrame'
 import { MobileWeekGrid } from './components/MobileWeekGrid'
+import { TiledWorkspace } from './components/TiledWorkspace'
 import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
 import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
@@ -150,6 +151,7 @@ export default function App() {
   })
   const [, setZCounter] = useState(6)
   const [layoutEpoch, setLayoutEpoch] = useState(0)
+  const [nativeV3, setNativeV3] = useState(false)
   const [input, setInput] = useState('')
   const [image, setImage] = useState<AttachedImage | null>(null)
   const [drafts, setDrafts] = useState<DraftEvent[]>([])
@@ -218,6 +220,35 @@ export default function App() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'lanshan.attach' || !event.newValue) return
+      const panel = event.newValue
+      setPanelVisible((current) => ({ ...current, [panel]: true }))
+      localStorage.removeItem('lanshan.attach')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
+    void fetch('/api/health')
+      .then((response) => response.json())
+      .then((payload: { native?: boolean }) => setNativeV3(Boolean(payload.native)))
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    const onStorageSync = (event: StorageEvent) => {
+      if (event.key === 'lanshan.events.v1') {
+        const next = loadEvents()
+        if (next) setEvents(next)
+      }
+      if (event.key === 'lanshan.settings.v1') setSettings(loadSettings())
+    }
+    window.addEventListener('storage', onStorageSync)
+    return () => window.removeEventListener('storage', onStorageSync)
+  }, [])
   useEffect(() => {
     saveEvents(events)
   }, [events])
@@ -466,6 +497,14 @@ export default function App() {
     setGithubDialogOpen(true)
   }
 
+  const detachPanel = (id: string) => {
+    void fetch(`/api/detach?panel=${encodeURIComponent(id)}`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`native bridge ${response.status}`)
+        setPanelVisible((current) => ({ ...current, [id]: false }))
+      })
+      .catch(() => notify('独立窗口仅支持 Wails v3 桌面壳', { tone: 'error' }))
+  }
   const bringWindowToFront = (id: string) => {
     setZCounter((current) => {
       const next = current + 1
@@ -752,6 +791,7 @@ export default function App() {
     onOpenSettings: () => setSettingsOpen(true),
   }
 
+  const detachedPanel = new URLSearchParams(window.location.search).get('panel')
   const layout = initialWindowLayout()
   const topNavWindows = [
     { id: 'timeline' as const, label: windowLabel('timeline'), visible: panelVisible.timeline },
@@ -781,6 +821,80 @@ export default function App() {
     saveSettings(next)
   }
 
+  if (detachedPanel) {
+    const closeDetached = () => {
+      localStorage.setItem('lanshan.attach', detachedPanel)
+      void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(() => undefined)
+      window.close()
+    }
+    const content =
+      detachedPanel === 'week' ? (
+        <WeekOverview
+          events={liveEvents}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onOpenDay={(date) => {
+            setSelectedDate(date)
+            setViewMode('day')
+          }}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      ) : detachedPanel === 'timeline' ? (
+        <Timeline
+          events={liveEvents}
+          drafts={drafts}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          onShiftWeek={shiftWeek}
+          onToday={() => setSelectedDate(startOfDay(new Date()))}
+          onAdd={openCapture}
+          onEventClick={(event) => setActiveEventId(event.id)}
+          onSync={() => handleSync()}
+          onOpenSettings={openGithubConnect}
+          syncLabel={syncLabel}
+          syncConnected={syncConnected}
+          syncing={syncing}
+        />
+      ) : detachedPanel === 'inbox' ? (
+        <Inspector
+          drafts={drafts}
+          document={scheduleDoc}
+          tab={tab}
+          onTab={setTab}
+          onToggle={handleToggleDraft}
+          onSelectAll={handleSelectAll}
+          onAnswerOption={handleAnswerOption}
+          onAnswerCustom={handleAnswerCustom}
+          onConfirm={handleConfirm}
+          onCopy={handleCopyJson}
+          onDownload={handleExport}
+          parsing={parsing}
+          stage={stage}
+          engineLabel={engineLabel}
+        />
+      ) : (
+        <CapturePanel {...captureProps} />
+      )
+    return (
+      <div className="detached-shell">
+        <header className="detached-head">
+          <span>{windowLabel(detachedPanel)}</span>
+          <button type="button" onClick={closeDetached} aria-label="关闭独立窗口">
+            <Icon name="x" size={14} />
+          </button>
+        </header>
+        <div className="detached-content">{content}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell app-shell--v3">
       <div className="liquid-bg" aria-hidden="true">
@@ -805,114 +919,104 @@ export default function App() {
           onOpenSyncSettings={openGithubConnect}
           theme={settings.theme}
           onToggleTheme={toggleTheme}
-          nativeWindow={Boolean(nativeBridge)}
-          onMinimize={() => nativeBridge?.WindowMinimise?.()}
-          onMaximize={() => nativeBridge?.WindowToggleMaximise?.()}
-          onCloseWindow={handleExit}
+          nativeWindow={Boolean(nativeBridge) || nativeV3}
+          onMinimize={() => {
+            if (nativeV3) void fetch('/api/window/minimize')
+            else nativeBridge?.WindowMinimise?.()
+          }}
+          onMaximize={() => {
+            if (nativeV3) void fetch('/api/window/maximize')
+            else nativeBridge?.WindowToggleMaximise?.()
+          }}
+          onCloseWindow={() => {
+            if (nativeV3) void fetch('/api/window/close')
+            else handleExit()
+          }}
         />
 
         <div className="window-workspace">
-          {panelVisible.capture && (
-            <WindowFrame
-              key={`capture-${layoutEpoch}`}
-              id="capture"
-              title="添加日程"
-              icon={<Icon name="plus" size={15} />}
-              initial={layout.capture}
-              zIndex={windowZ.capture}
-              onFocus={() => bringWindowToFront('capture')}
-              onClose={() => setPanelVisible((current) => ({ ...current, capture: false }))}
-            >
-              <CapturePanel {...captureProps} />
-            </WindowFrame>
-          )}
-          {panelVisible.week && (
-            <WindowFrame
-              key={`week-${layoutEpoch}`}
-              id="week"
-              title="周概览"
-              icon={<Icon name="grid" size={15} />}
-              initial={layout.week}
-              zIndex={windowZ.week}
-              onFocus={() => bringWindowToFront('week')}
-              onClose={() => setPanelVisible((current) => ({ ...current, week: false }))}
-            >
-              <WeekOverview
-                events={liveEvents}
-                selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
-                onShiftWeek={shiftWeek}
-                onToday={() => setSelectedDate(startOfDay(new Date()))}
-                onEventClick={(event) => setActiveEventId(event.id)}
-                onOpenDay={(date) => {
-                  setSelectedDate(date)
-                  setViewMode('day')
-                }}
-                onSync={() => handleSync()}
-                onOpenSettings={openGithubConnect}
-                syncLabel={syncLabel}
-                syncConnected={syncConnected}
-                syncing={syncing}
-              />
-            </WindowFrame>
-          )}
-          {panelVisible.timeline && (
-            <WindowFrame
-              key={`timeline-${layoutEpoch}`}
-              id="timeline"
-              title="时间轴"
-              icon={<Icon name="calendar" size={15} />}
-              initial={layout.timeline}
-              zIndex={windowZ.timeline}
-              onFocus={() => bringWindowToFront('timeline')}
-              onClose={() => setPanelVisible((current) => ({ ...current, timeline: false }))}
-            >
-              <Timeline
-                events={liveEvents}
-                drafts={drafts}
-                selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
-                onShiftWeek={shiftWeek}
-                onToday={() => setSelectedDate(startOfDay(new Date()))}
-                onAdd={openCapture}
-                onEventClick={(event) => setActiveEventId(event.id)}
-                onSync={() => handleSync()}
-                onOpenSettings={openGithubConnect}
-                syncLabel={syncLabel}
-                syncConnected={syncConnected}
-                syncing={syncing}
-              />
-            </WindowFrame>
-          )}
-          {panelVisible.inbox && (
-            <WindowFrame
-              key={`inbox-${layoutEpoch}`}
-              id="inbox"
-              title="整理箱"
-              icon={<Icon name="inbox" size={15} />}
-              initial={layout.inbox}
-              zIndex={windowZ.inbox}
-              onFocus={() => bringWindowToFront('inbox')}
-              onClose={() => setPanelVisible((current) => ({ ...current, inbox: false }))}
-            >
-              <Inspector
-                drafts={drafts}
-                document={scheduleDoc}
-                tab={tab}
-                onTab={setTab}
-                onToggle={handleToggleDraft}
-                onSelectAll={handleSelectAll}
-                onAnswerOption={handleAnswerOption}
-                onAnswerCustom={handleAnswerCustom}
-                onConfirm={handleConfirm}
-                onCopy={handleCopyJson}
-                onDownload={handleExport}
-                parsing={parsing}
-                stage={stage}
-                engineLabel={engineLabel}
-              />
-            </WindowFrame>
-          )}
+          <TiledWorkspace
+            panels={[
+              ...(panelVisible.capture
+                ? [{ id: 'capture' as const, title: '添加日程', icon: <Icon name="plus" size={14} />, content: <CapturePanel {...captureProps} /> }]
+                : []),
+              ...(panelVisible.inbox
+                ? [{
+                    id: 'inbox' as const,
+                    title: '整理箱',
+                    icon: <Icon name="inbox" size={14} />,
+                    content: (
+                      <Inspector
+                        drafts={drafts}
+                        document={scheduleDoc}
+                        tab={tab}
+                        onTab={setTab}
+                        onToggle={handleToggleDraft}
+                        onSelectAll={handleSelectAll}
+                        onAnswerOption={handleAnswerOption}
+                        onAnswerCustom={handleAnswerCustom}
+                        onConfirm={handleConfirm}
+                        onCopy={handleCopyJson}
+                        onDownload={handleExport}
+                        parsing={parsing}
+                        stage={stage}
+                        engineLabel={engineLabel}
+                      />
+                    ),
+                  }]
+                : []),
+              ...(panelVisible.week
+                ? [{
+                    id: 'week' as const,
+                    title: '周概览',
+                    icon: <Icon name="grid" size={14} />,
+                    content: (
+                      <WeekOverview
+                        events={liveEvents}
+                        selectedDate={selectedDate}
+                        onSelectDate={setSelectedDate}
+                        onShiftWeek={shiftWeek}
+                        onToday={() => setSelectedDate(startOfDay(new Date()))}
+                        onEventClick={(event) => setActiveEventId(event.id)}
+                        onOpenDay={(date) => { setSelectedDate(date); setViewMode('day') }}
+                        onSync={() => handleSync()}
+                        onOpenSettings={openGithubConnect}
+                        syncLabel={syncLabel}
+                        syncConnected={syncConnected}
+                        syncing={syncing}
+                      />
+                    ),
+                  }]
+                : []),
+              ...(panelVisible.timeline
+                ? [{
+                    id: 'timeline' as const,
+                    title: '时间轴',
+                    icon: <Icon name="calendar" size={14} />,
+                    content: (
+                      <Timeline
+                        events={liveEvents}
+                        drafts={drafts}
+                        selectedDate={selectedDate}
+                        onSelectDate={setSelectedDate}
+                        onShiftWeek={shiftWeek}
+                        onToday={() => setSelectedDate(startOfDay(new Date()))}
+                        onAdd={openCapture}
+                        onEventClick={(event) => setActiveEventId(event.id)}
+                        onSync={() => handleSync()}
+                        onOpenSettings={openGithubConnect}
+                        syncLabel={syncLabel}
+                        syncConnected={syncConnected}
+                        syncing={syncing}
+                      />
+                    ),
+                  }]
+                : []),
+            ]}
+            onClose={(id) => setPanelVisible((current) => ({ ...current, [id]: false }))}
+            onDetach={(id) => detachPanel(id)}
+            onFocus={(id) => bringWindowToFront(id)}
+          />
           {settingsOpen && (
             <WindowFrame
               key={`settings-${layoutEpoch}`}
@@ -1251,5 +1355,12 @@ export default function App() {
     </div>
   )
 }
+
+
+
+
+
+
+
 
 

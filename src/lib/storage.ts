@@ -48,7 +48,15 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function loadApiKey(): string {
-  return localStorage.getItem(API_KEY) ?? ''
+  const stored = localStorage.getItem(API_KEY)
+  if (stored) return stored
+  const legacy = sessionStorage.getItem(API_KEY)
+  if (legacy) {
+    localStorage.setItem(API_KEY, legacy)
+    sessionStorage.removeItem(API_KEY)
+    return legacy
+  }
+  return ''
 }
 
 export function saveApiKey(key: string): void {
@@ -57,7 +65,15 @@ export function saveApiKey(key: string): void {
 }
 
 export function loadGithubToken(): string {
-  return localStorage.getItem(GITHUB_TOKEN) ?? ''
+  const stored = localStorage.getItem(GITHUB_TOKEN)
+  if (stored) return stored
+  const legacy = sessionStorage.getItem(GITHUB_TOKEN)
+  if (legacy) {
+    localStorage.setItem(GITHUB_TOKEN, legacy)
+    sessionStorage.removeItem(GITHUB_TOKEN)
+    return legacy
+  }
+  return ''
 }
 
 export function saveGithubToken(token: string): void {

@@ -9,6 +9,7 @@ export interface WindowFrameProps {
   initial: { x: number; y: number; width: number; height: number }
   zIndex: number
   floating?: boolean
+  onDetach?: () => void
   onFocus: () => void
   onClose: () => void
   children: ReactNode
@@ -149,6 +150,7 @@ export function WindowFrame({
   initial,
   zIndex,
   floating = false,
+  onDetach,
   onFocus,
   onClose,
   children,
@@ -183,6 +185,20 @@ export function WindowFrame({
         }}
         resizeHandleClasses={resizeHandleClasses}
         onDragStart={() => setIsFloating(true)}
+        onDragStop={(event, data) => {
+          const parent = (event.target as HTMLElement).parentElement
+          const width = parent?.clientWidth ?? window.innerWidth
+          const height = parent?.clientHeight ?? window.innerHeight
+          if (
+            onDetach &&
+            (data.x + 60 < 0 ||
+              data.y + 40 < 0 ||
+              data.x > width - 60 ||
+              data.y > height - 40)
+          ) {
+            onDetach()
+          }
+        }}
         onClick={onFocus}
         role="dialog"
         aria-label={title}
@@ -196,6 +212,20 @@ export function WindowFrame({
           <span className="window-frame__bar-title" title={title}>
             {title}
           </span>
+          {onDetach ? (
+            <button
+              type="button"
+              className="window-frame__close"
+              aria-label={`把${title}放到独立窗口`}
+              title="放到独立窗口"
+              onClick={(event) => {
+                event.stopPropagation()
+                onDetach()
+              }}
+            >
+              <Icon name="external" size={13} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="window-frame__close"

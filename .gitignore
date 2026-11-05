@@ -34,3 +34,6 @@ release/
 
 # Wails generated bindings
 wailsjs/
+
+v4shell/dist/
+v4shell/*.exe
