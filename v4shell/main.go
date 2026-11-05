@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:dist
@@ -24,6 +25,7 @@ type windowBridge struct {
 	main     *application.WebviewWindow
 	mu       sync.Mutex
 	detached map[string]*application.WebviewWindow
+	attached map[string]bool
 }
 
 func (b *windowBridge) detach(panel string) {
@@ -48,6 +50,21 @@ func (b *windowBridge) detach(panel string) {
 		URL:              "/?panel=" + panel,
 	})
 	b.detached[panel] = window
+
+	// Bring the panel back when the independent window is moved over the main
+	// window. The main webview polls /api/state and restores the tile.
+	window.OnWindowEvent(events.Common.WindowDidMove, func(*application.WindowEvent) {
+		mx, my := b.main.Position()
+		mw, mh := b.main.Size()
+		x, y := window.Position()
+		ww, wh := window.Size()
+		if x+ww/2 > mx && x+ww/2 < mx+mw && y+wh/2 > my && y+wh/2 < my+mh {
+			b.mu.Lock()
+			b.attached[panel] = true
+			b.mu.Unlock()
+			window.Close()
+		}
+	})
 }
 
 func (b *windowBridge) attach(panel string) {
@@ -130,6 +147,24 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 		case "/api/window/state":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]bool{"maximised": b.main.IsMaximised()})
+		case "/api/state":
+			b.mu.Lock()
+			detached := make([]string, 0, len(b.detached))
+			for id := range b.detached {
+				detached = append(detached, id)
+			}
+			attached := make([]string, 0, len(b.attached))
+			for id := range b.attached {
+				attached = append(attached, id)
+			}
+			b.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"detached": detached, "attached": attached})
+		case "/api/ack":
+			b.mu.Lock()
+			delete(b.attached, r.URL.Query().Get("panel"))
+			b.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
 		case "/api/github":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -166,7 +201,10 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 }
 
 func main() {
-	bridge := &windowBridge{detached: map[string]*application.WebviewWindow{}}
+	bridge := &windowBridge{
+		detached: map[string]*application.WebviewWindow{},
+		attached: map[string]bool{},
+	}
 	static := application.AssetFileServerFS(assets)
 	app := application.New(application.Options{
 		Name: "阑珊时刻",

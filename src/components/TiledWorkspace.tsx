@@ -71,8 +71,15 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
     const ids = panels.map((panel) => panel.id)
     setOrder((current) => {
       const kept = current.filter((id) => ids.includes(id))
-      const added = ids.filter((id) => !kept.includes(id))
-      return [...kept, ...added]
+      for (const id of ['capture', 'inbox', 'week', 'timeline'] as TileId[]) {
+        if (!ids.includes(id) || kept.includes(id)) continue
+        const preferred = ['capture', 'inbox', 'week', 'timeline'].indexOf(id)
+        const insertAt = kept.findIndex(
+          (item) => ['capture', 'inbox', 'week', 'timeline'].indexOf(item) > preferred,
+        )
+        kept.splice(insertAt < 0 ? kept.length : insertAt, 0, id)
+      }
+      return kept
     })
   }, [panels])
 

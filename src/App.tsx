@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   AppSettings,
   AttachedImage,
@@ -249,6 +249,21 @@ export default function App() {
     window.addEventListener('storage', onStorageSync)
     return () => window.removeEventListener('storage', onStorageSync)
   }, [])
+  useEffect(() => {
+    if (!nativeV3) return
+    const timer = window.setInterval(() => {
+      void fetch('/api/state')
+        .then((response) => response.json())
+        .then((payload: { attached?: string[] }) => {
+          for (const panel of payload.attached ?? []) {
+            setPanelVisible((current) => ({ ...current, [panel]: true }))
+            void fetch(`/api/ack?panel=${encodeURIComponent(panel)}`)
+          }
+        })
+        .catch(() => undefined)
+    }, 900)
+    return () => window.clearInterval(timer)
+  }, [nativeV3])
   useEffect(() => {
     saveEvents(events)
   }, [events])
@@ -1355,6 +1370,7 @@ export default function App() {
     </div>
   )
 }
+
 
 
 
