@@ -688,3 +688,39 @@
 .tile-frame .composer__textarea {
   height: 96px;
 }
+
+.tile-frame--merge-target {
+  outline: 2px solid var(--text-strong);
+  outline-offset: -2px;
+}
+
+.tile-frame__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.tile-frame__tab {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 4px 8px;
+  border-radius: 5px 5px 0 0;
+  color: var(--faint);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-frame__tab:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-strong);
+}
+
+.tile-frame__tab.is-active {
+  background: var(--glass-bg-hover);
+  color: var(--text-strong);
+}

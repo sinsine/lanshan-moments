@@ -1,7 +1,7 @@
 ﻿{
   "name": "lanshan-moments",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "阑珊时刻：AI 驱动的跨设备日程整理工具（Windows / Android）",
   "type": "module",
   "engines": {
@@ -29,6 +29,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.89.0",
+    "playwright-core": "^1.64.1",
     "typescript": "~7.0.2",
     "vite": "^8.3.5"
   }
