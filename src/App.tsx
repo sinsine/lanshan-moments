@@ -239,6 +239,17 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const onStorageSync = (event: StorageEvent) => {
+      if (event.key === 'lanshan.events.v1') {
+        const next = loadEvents()
+        if (next) setEvents(next)
+      }
+      if (event.key === 'lanshan.settings.v1') setSettings(loadSettings())
+    }
+    window.addEventListener('storage', onStorageSync)
+    return () => window.removeEventListener('storage', onStorageSync)
+  }, [])
+  useEffect(() => {
     saveEvents(events)
   }, [events])
 
@@ -1344,6 +1355,7 @@ export default function App() {
     </div>
   )
 }
+
 
 
 
