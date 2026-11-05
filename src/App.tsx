@@ -15,7 +15,7 @@ import { openExternal } from './lib/native'
 import { TopNav } from './components/TopNav'
 import { WindowFrame } from './components/WindowFrame'
 import { MobileWeekGrid } from './components/MobileWeekGrid'
-import { TiledWorkspace } from './components/TiledWorkspace'
+import { DockWorkspace } from './components/DockWorkspace'
 import { applyClarifyCustom, applyClarifyOption, missingRequiredFields } from './lib/clarify'
 import { parseScheduleText } from './lib/parser'
 import { friendlyAiError, parseWithAi } from './lib/ai'
@@ -147,9 +147,9 @@ export default function App() {
     week: 2,
     timeline: 3,
     inbox: 4,
-    settings: 5,
+    settings: 100,
   })
-  const [, setZCounter] = useState(6)
+  const [, setZCounter] = useState(101)
   const [layoutEpoch, setLayoutEpoch] = useState(0)
   const [nativeV3, setNativeV3] = useState(false)
   const [input, setInput] = useState('')
@@ -239,6 +239,52 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!nativeV3) return
+    const detached = new URLSearchParams(window.location.search).get('panel')
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (
+        target.closest(
+          'button, a, input, textarea, select, [contenteditable="true"], .menu-panel, .dock-menu',
+        )
+      ) {
+        return
+      }
+      if (detached && target.closest('.detached-head')) {
+        void fetch(
+          `/api/window/panel?panel=${encodeURIComponent(detached)}&action=start-move`,
+        ).catch(() => undefined)
+        return
+      }
+      if (!detached && target.closest('.topnav')) {
+        void fetch('/api/window/action?action=start-move').catch(() => undefined)
+      }
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => window.removeEventListener('pointerdown', onPointerDown, true)
+  }, [nativeV3])
+
+  useEffect(() => {
+    if (!nativeV3) return
+    const detached = new URLSearchParams(window.location.search).get('panel')
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F11') return
+      event.preventDefault()
+      if (detached) {
+        void fetch(
+          `/api/window/panel?panel=${encodeURIComponent(detached)}&action=fullscreen`,
+        ).catch(() => undefined)
+      } else {
+        void fetch('/api/window/action?action=fullscreen').catch(() => undefined)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [nativeV3])
+
+  useEffect(() => {
     const onStorageSync = (event: StorageEvent) => {
       if (event.key === 'lanshan.events.v1') {
         const next = loadEvents()
@@ -251,6 +297,9 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (!nativeV3) return
+    // Detached panel windows share this bundle. They must not consume the
+    // attach queue; only the main window restores panels into its dock.
+    if (new URLSearchParams(window.location.search).has('panel')) return
     const timer = window.setInterval(() => {
       void fetch('/api/state')
         .then((response) => response.json())
@@ -512,13 +561,29 @@ export default function App() {
     setGithubDialogOpen(true)
   }
 
-  const detachPanel = (id: string) => {
-    void fetch(`/api/detach?panel=${encodeURIComponent(id)}`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`native bridge ${response.status}`)
-        setPanelVisible((current) => ({ ...current, [id]: false }))
-      })
-      .catch(() => notify('独立窗口仅支持 Wails v3 桌面壳', { tone: 'error' }))
+  const detachPanel = async (
+    id: string,
+    point?: { x: number; y: number },
+  ): Promise<boolean> => {
+    try {
+      const params = new URLSearchParams({ panel: id })
+      if (point) {
+        params.set('x', String(Math.round(point.x)))
+        params.set('y', String(Math.round(point.y)))
+      }
+      const response = await fetch(`/api/detach?${params.toString()}`)
+      const type = response.headers.get('content-type') ?? ''
+      if (!response.ok || !type.includes('application/json')) {
+        throw new Error(`native bridge ${response.status}`)
+      }
+      const payload = (await response.json()) as { ok?: boolean }
+      if (!payload.ok) throw new Error('native bridge rejected the window')
+      setPanelVisible((current) => ({ ...current, [id]: false }))
+      return true
+    } catch {
+      notify('独立窗口仅支持 Wails v3 桌面壳；当前面板保留在主窗口', { tone: 'error' })
+      return false
+    }
   }
   const bringWindowToFront = (id: string) => {
     setZCounter((current) => {
@@ -824,7 +889,7 @@ export default function App() {
     setPanelVisible((current) => ({ ...current, capture: true }))
     window.setTimeout(() => {
       document
-        .querySelector<HTMLTextAreaElement>('.window-frame .capture textarea')
+        .querySelector<HTMLTextAreaElement>('.dock-group .capture textarea')
         ?.focus()
     }, 60)
   }
@@ -837,9 +902,30 @@ export default function App() {
   }
 
   if (detachedPanel) {
+    const detachedAction = (
+      action: 'minimize' | 'maximize' | 'fullscreen',
+    ) => {
+      if (!nativeV3) return
+      void fetch(
+        `/api/window/panel?panel=${encodeURIComponent(detachedPanel)}&action=${action}`,
+      ).catch(() => undefined)
+    }
     const closeDetached = () => {
       localStorage.setItem('lanshan.attach', detachedPanel)
-      void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(() => undefined)
+      if (nativeV3) {
+        void fetch(
+          `/api/window/panel?panel=${encodeURIComponent(detachedPanel)}&action=attach`,
+        ).catch(() => {
+          void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(
+            () => undefined,
+          )
+          window.close()
+        })
+        return
+      }
+      void fetch(`/api/attach?panel=${encodeURIComponent(detachedPanel)}`).catch(
+        () => undefined,
+      )
       window.close()
     }
     const content =
@@ -899,11 +985,41 @@ export default function App() {
       )
     return (
       <div className="detached-shell">
-        <header className="detached-head">
-          <span>{windowLabel(detachedPanel)}</span>
-          <button type="button" onClick={closeDetached} aria-label="关闭独立窗口">
-            <Icon name="x" size={14} />
-          </button>
+        <header className="detached-head" title="拖动标题栏移动；拖回主窗口可重新停靠">
+          <span className="detached-head__title">{windowLabel(detachedPanel)}</span>
+          <div className="detached-head__actions">
+            <button type="button" onClick={closeDetached} aria-label="收回主窗口" title="收回主窗口">
+              <Icon name="pin" size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => detachedAction('minimize')}
+              aria-label="最小化独立窗口"
+              title="最小化"
+            >
+              <Icon name="minus" size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => detachedAction('maximize')}
+              aria-label="最大化或还原独立窗口"
+              title="最大化 / 还原"
+            >
+              <Icon name="square" size={11} />
+            </button>
+            <button
+              type="button"
+              onClick={() => detachedAction('fullscreen')}
+              aria-label="全屏或退出全屏独立窗口"
+              aria-keyshortcuts="F11"
+              title="全屏 / 退出全屏 (F11)"
+            >
+              <Icon name="expand" size={11} />
+            </button>
+            <button type="button" onClick={closeDetached} aria-label="关闭独立窗口" title="关闭">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
         </header>
         <div className="detached-content">{content}</div>
       </div>
@@ -950,7 +1066,8 @@ export default function App() {
         />
 
         <div className="window-workspace">
-          <TiledWorkspace
+          <DockWorkspace
+            native={nativeV3}
             panels={[
               ...(panelVisible.capture
                 ? [{ id: 'capture' as const, title: '添加日程', icon: <Icon name="plus" size={14} />, content: <CapturePanel {...captureProps} /> }]
@@ -1029,8 +1146,10 @@ export default function App() {
                 : []),
             ]}
             onClose={(id) => setPanelVisible((current) => ({ ...current, [id]: false }))}
-            onDetach={(id) => detachPanel(id)}
+            onDetach={detachPanel}
             onFocus={(id) => bringWindowToFront(id)}
+            onTogglePanel={(id) => toggleWindow(id)}
+            onNotify={(message, tone) => notify(message, { tone })}
           />
           {settingsOpen && (
             <WindowFrame

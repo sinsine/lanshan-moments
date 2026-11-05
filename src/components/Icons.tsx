@@ -34,6 +34,7 @@ export type IconName =
   | 'menu'
   | 'wand'
   | 'external'
+  | 'expand'
   | 'keyboard'
 
 const paths: Record<IconName, ReactNode> = {
@@ -164,6 +165,7 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   external: <path d="M14 4h6v6M20 4l-8 8M18 14v5H5V6h5" />,
+  expand: <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />,
   keyboard: (
     <>
       <rect x="2.5" y="6" width="19" height="12" rx="2" />

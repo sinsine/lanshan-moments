@@ -1,5 +1,5 @@
 /* A deliberately small app-shell cache. Data stays in localStorage/IndexedDB. */
-const CACHE = 'lanshan-shell-v1'
+const CACHE = 'lanshan-shell-v2'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -21,6 +21,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
+  // Native window bridge + GitHub proxy must always reach Go; caching these
+  // JSON endpoints would freeze /api/state and replay stale /api/detach data.
+  if (url.pathname.startsWith('/api/')) return
 
   if (request.mode === 'navigate') {
     event.respondWith(

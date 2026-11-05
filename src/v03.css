@@ -325,7 +325,7 @@
 }
 
 .desktop-shell .topnav {
-  --wails-draggable: drag;
+  --wails-draggable: no-drag;
 }
 
 .topnav button,
@@ -380,7 +380,7 @@
 }
 
 .detached-head {
-  --wails-draggable: drag;
+  --wails-draggable: no-drag;
   display: flex;
   flex: 0 0 34px;
   align-items: center;

@@ -8,7 +8,7 @@
 「阑珊时刻」把一段话、截图或文章整理成统一日程 JSON，落在时间轴上，并通过 GitHub 私有仓库跨设备同步。
 
 - 主仓库：<https://github.com/sinsine/lanshan-moments>
-- 当前版本：`0.4.2`
+- 当前版本：`0.4.3`
 - 目标平台：Windows（优先）+ Android（ColorOS 16 / 一加 Ace 6T 测试机）
 - 设计语言：墨辰 / DarkCube 同款黑白液态玻璃，日间 + 夜间双主题
 - 当前默认主题：**日间**
@@ -19,7 +19,9 @@
 | 路径 | 用途 |
 |---|---|
 | `src/` | React 19 + TypeScript + Vite 前端 |
-| `src/components/TiledWorkspace.tsx` | 桌面平铺窗口、拖拽回流、分隔条、标签页组、拖出独立窗口 |
+| `src/components/DockWorkspace.tsx` | 递归停靠工作区、标签组、拖拽停靠、浮动窗口、右键菜单 |
+| `src/lib/layout.ts` | v3 布局模型、分割/合并/浮动、版本迁移与 localStorage |
+| `src/dock.css` | v0.4.3 停靠工作区 / 标签组 / 浮动窗口样式 |
 | `src/lib/native.ts` | Wails v2 / Wails v3 / Capacitor 三套原生桥接 |
 | `src/lib/storage.ts` | localStorage 数据、主题迁移、旧 sessionStorage 凭据迁移 |
 | `src/lib/providers.ts` | AI 提供商预设与 `/models` 拉取 |
@@ -41,17 +43,20 @@
 
 ## 3. 当前窗口系统约定
 
-`TiledWorkspace` 是桌面主窗口的核心：
+`DockWorkspace` + `src/lib/layout.ts` 是桌面主窗口的核心：
 
-- 默认四组：添加日程 / 整理箱 / 周概览 / 时间轴，自动铺满，平铺状态**无圆角**。
-- 拖动标题栏：ghost + 目标虚线预览 + 其他组实时回流；松手 CSS transition 落位。
-- 拖动分隔条：可改左右列宽、左列上下比例、右列上下比例。
-- 拖到另一个窗口标题栏：合并成标签页组；点击标签切换；关闭/独立按钮作用于当前标签。
-- 拖出工作区：`onDetach` → `/api/detach?panel=...` → Wails v3 创建独立原生窗口。
-- 独立窗口 URL：`/?panel=capture|week|timeline|inbox`，只渲染对应面板。
-- 独立窗口移回主窗口上方：Go 侧 `WindowDidMove` 检测重叠，关闭独立窗口并通知主窗口恢复。
-- 主窗口与独立窗口通过 localStorage 的 `storage` 事件同步日程和设置。
-- 平铺状态无圆角；独立窗口/浮动窗口有圆角。
+- 默认四组：添加日程 / 整理箱 / 周概览 / 时间轴，递归分割成四栏；停靠状态**无圆角**。
+- 只有面板标题栏能发起拖拽；内容区点击、输入、滚动不触发窗口移动。
+- 拖动期间布局不实时交换；经过目标标题栏显示合并高亮，经过内容四边显示分割预览，松手才落位。
+- 拖到工作区边缘/角落/顶部：半屏 / 四分之一 / 最大化停靠预览；双击标题栏最大化/还原。
+- 标签组可切换、单个关闭/独立；右键菜单支持浮动、最大化、全屏、关闭标签组、保存/恢复/重置布局。
+- 拖出主窗口：`onDetach` → `/api/detach`；成功才从布局移除面板，失败保留面板。网页环境退化为工作区浮动窗口。
+- Wails v3 独立窗口：`/?panel=capture|week|timeline|inbox`，只渲染对应面板；标题栏自定义收回/最小化/最大化/关闭。
+- 独立窗口移回主窗口上方并松手：Go 侧检测重叠并收回面板；关闭独立窗口也会恢复面板。
+- 主窗口关闭时先关闭所有独立窗口；子窗口不得让应用留下僵尸进程。
+- 布局 JSON（`version: 3`）自动保存到 `localStorage`；快捷键 `Ctrl+Shift+L` 保存快照、`Ctrl+Alt+R` 重置、`Ctrl+Shift+1~4` 切换面板、`Ctrl+Shift+M` 最大化。
+- 独立窗口位置按多显示器工作区限制；完全移出屏幕后自动拉回。
+- 平铺状态无圆角；浮动窗口/独立窗口有圆角。
 - 每个窗口关闭/独立按钮只操作当前标签，不得误删整个组。
 
 ## 4. 常用命令
@@ -81,7 +86,7 @@ Copy-Item dist v4shell/dist -Recurse
 $env:PATH="$env:USERPROFILE\sdk\go\bin;$env:USERPROFILE\go\bin;$env:PATH"
 $env:GOPROXY='https://goproxy.cn,direct'
 Push-Location v4shell
-go build -ldflags "-H windowsgui" -o lanshan-moments-0.4.2-windows-amd64.exe .
+go build -ldflags "-H windowsgui" -o lanshan-moments-0.4.3-windows-amd64.exe .
 Pop-Location
 ```
 
@@ -112,11 +117,11 @@ Android 工具链：
 
 当前项目名固定为 **`lanshan-moments`**。
 
-示例 v0.4.2：
+示例 v0.4.3：
 
-- `lanshan-moments-0.4.2-windows-amd64.exe`
-- `lanshan-moments-0.4.2-android-universal.apk`
-- `lanshan-moments-0.4.2-source.zip`
+- `lanshan-moments-0.4.3-windows-amd64.exe`
+- `lanshan-moments-0.4.3-android-universal.apk`
+- `lanshan-moments-0.4.3-source.zip`
 
 发布步骤：
 
@@ -165,12 +170,14 @@ Android 工具链：
 - [ ] `npm run build`、`npx tsc -b`、`npm run lint` 通过
 - [ ] 日间/夜间都检查
 - [ ] 四窗口铺满、无圆角
-- [ ] 拖动标题栏有 ghost/预览/实时回流/动画
+- [ ] 只有标题栏能拖动；内容区输入/选择文字不移动窗口
+- [ ] 拖到另一个标题栏合并为标签页，拖动期间不交换位置
+- [ ] 拖到面板四边形成分割；拖到边缘/角落/顶部显示半屏/四分之一/最大化预览
 - [ ] 拖动分隔条改变比例
-- [ ] 拖到另一个标题栏合并为标签页
 - [ ] 拖出工作区创建独立原生窗口
-- [ ] 独立窗口移回主窗口恢复面板
-- [ ] 顶部最小化/最大化/关闭可用
+- [ ] 独立窗口移回主窗口恢复面板；关闭/收回独立窗口也恢复面板
+- [ ] 布局保存、刷新恢复、重置默认布局
+- [ ] 顶部最小化/最大化/关闭可用；关闭主窗口不残留独立窗口
 - [ ] 无终端窗口
 
 移动端：

@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (a *App) startup(ctx context.Context) {
 
 // Version is exposed to the web UI as a small native health check.
 func (a *App) Version() string {
-	return "0.4.2"
+	return "0.4.3"
 }
 
 // HTTPResponse is the small envelope returned to the WebView.

@@ -11,7 +11,7 @@ Copy-Item (Join-Path $root 'dist') $stage -Recurse
 $env:PATH = "$env:USERPROFILE\sdk\go\bin;$env:USERPROFILE\go\bin;$env:PATH"
 $env:GOPROXY = 'https://goproxy.cn,direct'
 
-$version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
+$version = (Get-Content (Join-Path $root 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $name = "lanshan-moments-$version-windows-amd64.exe"
 
 Push-Location (Join-Path $root 'v4shell')
