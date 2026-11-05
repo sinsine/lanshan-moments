@@ -28,6 +28,18 @@ function wailsBridge(): WailsBridge | null {
   return candidate?.GitHubRequest ? candidate : null
 }
 
+let v3NativePromise: Promise<boolean> | null = null
+
+async function isV3Native(): Promise<boolean> {
+  if (!v3NativePromise) {
+    v3NativePromise = fetch('/api/health')
+      .then((response) => response.json())
+      .then((payload: { native?: boolean }) => Boolean(payload.native))
+      .catch(() => false)
+  }
+  return v3NativePromise
+}
+
 export function hasNativeGitHubBridge(): boolean {
   return Boolean(wailsBridge()) || Boolean((window as unknown as { Capacitor?: unknown }).Capacitor)
 }
@@ -46,6 +58,17 @@ export async function nativeGitHubRequest(
       status: result.status ?? result.Status ?? 500,
       body: result.body ?? result.Body ?? '',
     }
+  }
+
+  if (await isV3Native()) {
+    const response = await fetch('/api/github', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, url, body, contentType, token }),
+    })
+    if (!response.ok) throw new Error(`GitHub bridge ${response.status}`)
+    const payload = (await response.json()) as { status?: number; body?: string }
+    return { status: payload.status ?? 500, body: payload.body ?? '' }
   }
 
   const capacitor = (window as unknown as {
@@ -78,6 +101,10 @@ export async function openExternal(url: string): Promise<void> {
   const wails = wailsBridge()
   if (wails?.OpenExternal) {
     await wails.OpenExternal(url)
+    return
+  }
+  if (await isV3Native()) {
+    await fetch(`/api/open-external?url=${encodeURIComponent(url)}`)
     return
   }
   window.open(url, '_blank', 'noopener,noreferrer')

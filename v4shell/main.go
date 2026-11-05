@@ -3,9 +3,15 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"os/exec"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -53,6 +59,49 @@ func (b *windowBridge) attach(panel string) {
 	}
 }
 
+func githubProxy(method, rawURL, body, contentType, token string) (int, string, error) {
+	upper := strings.ToUpper(strings.TrimSpace(method))
+	if upper != http.MethodGet && upper != http.MethodPost {
+		return 0, "", fmt.Errorf("unsupported method")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || (parsed.Host != "github.com" && parsed.Host != "api.github.com") {
+		return 0, "", fmt.Errorf("GitHub host required")
+	}
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	request, err := http.NewRequest(upper, rawURL, reader)
+	if err != nil {
+		return 0, "", err
+	}
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	request.Header.Set("Content-Type", contentType)
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+	if err != nil {
+		return 0, "", err
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, 2*1024*1024))
+	return response.StatusCode, string(data), err
+}
+
+func openExternal(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" {
+		return fmt.Errorf("unsupported URL")
+	}
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
+}
+
 func (b *windowBridge) handler(static http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -81,6 +130,35 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 		case "/api/window/state":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]bool{"maximised": b.main.IsMaximised()})
+		case "/api/github":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var payload struct {
+				Method      string `json:"method"`
+				URL         string `json:"url"`
+				Body        string `json:"body"`
+				ContentType string `json:"contentType"`
+				Token       string `json:"token"`
+			}
+			if err := json.NewDecoder(io.LimitReader(r.Body, 4*1024*1024)).Decode(&payload); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			status, body, err := githubProxy(payload.Method, payload.URL, payload.Body, payload.ContentType, payload.Token)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": status, "body": body})
+		case "/api/open-external":
+			if err := openExternal(r.URL.Query().Get("url")); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			static.ServeHTTP(w, r)
 		}
