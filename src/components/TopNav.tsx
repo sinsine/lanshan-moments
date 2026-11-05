@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { APP_VERSION } from '../lib/config'
 import { Icon, LogoMark } from './Icons'
 
 /**
@@ -168,6 +169,18 @@ const TOPNAV_CSS = `
   font-weight: 600;
   letter-spacing: 0.16em;
   white-space: nowrap;
+}
+
+.topnav-version {
+  margin-left: 3px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0.82;
 }
 
 .topnav-menus {
@@ -701,6 +714,7 @@ export function TopNav({
       <div className="topnav-brand">
         <LogoMark size={22} />
         <span className="topnav-brand-name">{COPY.brand}</span>
+        <span className="topnav-version">v{APP_VERSION}</span>
       </div>
 
       <nav className="topnav-menus" aria-label={COPY.navLabel}>

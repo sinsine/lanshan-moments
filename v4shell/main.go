@@ -782,7 +782,7 @@ func (b *windowBridge) handler(static http.Handler) http.Handler {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"native":  true,
 				"windows": true,
-				"version": "0.5.0",
+				"version": "0.5.1",
 			})
 		case "/api/detach":
 			panel := r.URL.Query().Get("panel")

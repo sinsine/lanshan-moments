@@ -4,7 +4,7 @@
  * override it in Settings if they fork the project with their own OAuth App.
  */
 export const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lit3MNQQ192ZpJsd'
-export const APP_VERSION = '0.5.0'
+export const APP_VERSION = '0.5.1'
 export const REPO_URL = 'https://github.com/sinsine/lanshan-moments'
 export const AUTHOR_URL = 'https://space.bilibili.com/518517303'
 

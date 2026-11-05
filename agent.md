@@ -8,7 +8,7 @@
 「阑珊时刻」把一段话、截图或文章整理成统一日程 JSON，落在时间轴上，并通过 GitHub 私有仓库跨设备同步。
 
 - 主仓库：<https://github.com/sinsine/lanshan-moments>
-- 当前版本：`0.5.0`
+- 当前版本：`0.5.1`
 - 目标平台：Windows（优先）+ Android（ColorOS 16 / 一加 Ace 6T 测试机）
 - 设计语言：墨辰 / DarkCube 同款黑白液态玻璃，日间 + 夜间双主题
 - 当前默认主题：**日间**
@@ -91,7 +91,7 @@ Copy-Item dist v4shell/dist -Recurse
 $env:PATH="$env:USERPROFILE\sdk\go\bin;$env:USERPROFILE\go\bin;$env:PATH"
 $env:GOPROXY='https://goproxy.cn,direct'
 Push-Location v4shell
-go build -ldflags "-H windowsgui" -o lanshan-moments-0.5.0-windows-amd64.exe .
+go build -ldflags "-H windowsgui" -o lanshan-moments-0.5.1-windows-amd64.exe .
 Pop-Location
 ```
 
@@ -122,11 +122,11 @@ Android 工具链：
 
 当前项目名固定为 **`lanshan-moments`**。
 
-示例 v0.5.0：
+示例 v0.5.1：
 
-- `lanshan-moments-0.5.0-windows-amd64.exe`
-- `lanshan-moments-0.5.0-android-universal.apk`
-- `lanshan-moments-0.5.0-source.zip`
+- `lanshan-moments-0.5.1-windows-amd64.exe`
+- `lanshan-moments-0.5.1-android-universal.apk`
+- `lanshan-moments-0.5.1-source.zip`
 
 发布步骤：
 

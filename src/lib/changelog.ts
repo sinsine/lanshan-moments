@@ -12,6 +12,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.5.1',
+    date: '2026-11-05',
+    notes: [
+      '电脑端标题栏“阑珊时刻”右侧显示当前版本号，方便确认正在运行的构建。',
+      '时间轴当前时刻线降到留白卡片下层，不再穿过“这一天还没有被安排”的提示卡。',
+      '更新日志弹窗加宽并整体放大字号：标题 38px、版本 23px、正文 14px，长更新更易阅读。',
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-11-05',
     notes: [
