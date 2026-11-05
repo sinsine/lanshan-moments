@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -13,9 +13,10 @@ $env:GOPROXY = 'https://goproxy.cn,direct'
 
 Push-Location (Join-Path $root 'v4shell')
 try {
-  go build -o lanshan-v4.exe .
+  go build -ldflags "-H windowsgui" -o lanshan-v4.exe .
   Copy-Item lanshan-v4.exe (Join-Path $root 'release\lanshan-v4.exe') -Force
   Get-Item (Join-Path $root 'release\lanshan-v4.exe') | Select-Object FullName, Length, LastWriteTime
 } finally {
   Pop-Location
 }
+

@@ -16,13 +16,13 @@ const API_KEY = 'lanshan.api-key'
 const GITHUB_TOKEN = 'lanshan.github-token'
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  baseUrl: 'https://api.deepseek.com/v1',
+  baseUrl: 'https://api.deepseek.com',
   model: 'deepseek-chat',
   githubOwner: '',
   githubRepo: 'lanshan-schedule',
   githubBranch: 'main',
   githubClientId: '',
-  theme: 'dark',
+  theme: 'light',
 }
 
 export function getDeviceId(): string {
@@ -37,7 +37,15 @@ export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return DEFAULT_SETTINGS
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) }
+    const merged = { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) }
+    if (merged.baseUrl.replace(/\/+$/, '') === 'https://api.deepseek.com/v1') {
+      merged.baseUrl = 'https://api.deepseek.com'
+    }
+    if (!localStorage.getItem('lanshan.theme.v041')) {
+      merged.theme = 'light'
+      localStorage.setItem('lanshan.theme.v041', '1')
+    }
+    return merged
   } catch {
     return DEFAULT_SETTINGS
   }
@@ -238,3 +246,4 @@ export async function fileToAttachedImage(file: File): Promise<AttachedImage> {
     height,
   }
 }
+

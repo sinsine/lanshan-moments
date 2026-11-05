@@ -25,9 +25,22 @@ interface TiledWorkspaceProps {
 }
 
 const GAP = 8
+const MIN_SPLIT = 18
 
-/** Four, three, two and one-panel layouts. Every slot fills the workspace. */
-function layoutSlots(count: number): Rect[] {
+interface Splits {
+  column: number
+  left: number
+  right: number
+}
+
+type Divider = 'column' | 'left' | 'right'
+
+function clamp(value: number, min = MIN_SPLIT, max = 100 - MIN_SPLIT) {
+  return Math.max(min, Math.min(max, value))
+}
+
+/** Every visible panel fills a slot; the four-panel layout is resizable. */
+function layoutSlots(count: number, splits: Splits): Rect[] {
   if (count <= 1) return [{ x: 0, y: 0, w: 100, h: 100 }]
   if (count === 2) {
     return [
@@ -37,16 +50,16 @@ function layoutSlots(count: number): Rect[] {
   }
   if (count === 3) {
     return [
-      { x: 0, y: 0, w: 32, h: 50 },
-      { x: 0, y: 50, w: 32, h: 50 },
-      { x: 32, y: 0, w: 68, h: 100 },
+      { x: 0, y: 0, w: splits.column, h: splits.left },
+      { x: 0, y: splits.left, w: splits.column, h: 100 - splits.left },
+      { x: splits.column, y: 0, w: 100 - splits.column, h: 100 },
     ]
   }
   return [
-    { x: 0, y: 0, w: 30, h: 46 },
-    { x: 0, y: 46, w: 30, h: 54 },
-    { x: 30, y: 0, w: 70, h: 38 },
-    { x: 30, y: 38, w: 70, h: 62 },
+    { x: 0, y: 0, w: splits.column, h: splits.left },
+    { x: 0, y: splits.left, w: splits.column, h: 100 - splits.left },
+    { x: splits.column, y: 0, w: 100 - splits.column, h: splits.right },
+    { x: splits.column, y: splits.right, w: 100 - splits.column, h: 100 - splits.right },
   ]
 }
 
@@ -65,7 +78,10 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
   const [order, setOrder] = useState<TileId[]>(panels.map((panel) => panel.id))
   const [drag, setDrag] = useState<{ id: TileId; x: number; y: number } | null>(null)
   const [preview, setPreview] = useState<number | null>(null)
+  const [splits, setSplits] = useState<Splits>({ column: 30, left: 46, right: 38 })
+  const [divider, setDivider] = useState<Divider | null>(null)
   const dragRef = useRef<{ id: TileId } | null>(null)
+  const dividerRef = useRef<Divider | null>(null)
 
   useEffect(() => {
     const ids = panels.map((panel) => panel.id)
@@ -83,7 +99,7 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
     })
   }, [panels])
 
-  const slots = layoutSlots(panels.length)
+  const slots = layoutSlots(panels.length, splits)
   const byId = new Map(panels.map((panel) => [panel.id, panel]))
 
   const moveTo = (id: TileId, index: number) => {
@@ -121,7 +137,31 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
     rootRef.current?.setPointerCapture(event.pointerId)
   }
 
+  const onDividerDown = (event: ReactPointerEvent<HTMLButtonElement>, type: Divider) => {
+    event.preventDefault()
+    event.stopPropagation()
+    dividerRef.current = type
+    setDivider(type)
+    rootRef.current?.setPointerCapture(event.pointerId)
+  }
+
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const root = rootRef.current
+    if (dividerRef.current && root) {
+      const bounds = root.getBoundingClientRect()
+      const x = ((event.clientX - bounds.left) / bounds.width) * 100
+      const y = ((event.clientY - bounds.top) / bounds.height) * 100
+      const type = dividerRef.current
+      setSplits((current) => ({
+        ...current,
+        ...(type === 'column'
+          ? { column: clamp(x) }
+          : type === 'left'
+            ? { left: clamp(y) }
+            : { right: clamp(y) }),
+      }))
+      return
+    }
     if (!dragRef.current) return
     setDrag((current) => (current ? { ...current, x: event.clientX, y: event.clientY } : current))
     const target = hitSlot(event.clientX, event.clientY)
@@ -132,6 +172,11 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
   }
 
   const finishDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dividerRef.current) {
+      dividerRef.current = null
+      setDivider(null)
+      return
+    }
     if (!dragRef.current) return
     const root = rootRef.current
     const outside =
@@ -194,6 +239,46 @@ export function TiledWorkspace({ panels, onClose, onDetach, onFocus }: TiledWork
         )
       })}
 
+      {!drag && panels.length >= 3 && (
+        <button
+          type="button"
+          className={`tile-divider tile-divider--column ${divider === 'column' ? 'is-active' : ''}`}
+          style={{ left: `calc(${splits.column}% - 4px)` }}
+          onPointerDown={(event) => onDividerDown(event, 'column')}
+          aria-label="拖动调整左右比例"
+        />
+      )}
+      {!drag && panels.length === 3 && (
+        <button
+          type="button"
+          className={`tile-divider tile-divider--row ${divider === 'left' ? 'is-active' : ''}`}
+          style={{ top: `calc(${splits.left}% - 4px)`, width: `calc(${splits.column}% - 4px)` }}
+          onPointerDown={(event) => onDividerDown(event, 'left')}
+          aria-label="拖动调整左侧上下比例"
+        />
+      )}
+      {!drag && panels.length === 4 && (
+        <>
+          <button
+            type="button"
+            className={`tile-divider tile-divider--row ${divider === 'left' ? 'is-active' : ''}`}
+            style={{ top: `calc(${splits.left}% - 4px)`, width: `calc(${splits.column}% - 4px)` }}
+            onPointerDown={(event) => onDividerDown(event, 'left')}
+            aria-label="拖动调整左侧上下比例"
+          />
+          <button
+            type="button"
+            className={`tile-divider tile-divider--row ${divider === 'right' ? 'is-active' : ''}`}
+            style={{
+              top: `calc(${splits.right}% - 4px)`,
+              left: `calc(${splits.column}% + 4px)`,
+              width: `calc(${100 - splits.column}% - 8px)`,
+            }}
+            onPointerDown={(event) => onDividerDown(event, 'right')}
+            aria-label="拖动调整右侧上下比例"
+          />
+        </>
+      )}
       {drag && preview !== null && (
         <div className="tile-preview" style={toStyle(slots[preview])} aria-hidden="true" />
       )}

@@ -1,4 +1,4 @@
-export interface ProviderPreset {
+﻿export interface ProviderPreset {
   id: string
   name: string
   baseUrl: string
@@ -15,7 +15,7 @@ export const PROVIDERS: ProviderPreset[] = [
   {
     id: 'deepseek',
     name: 'DeepSeek 深度求索',
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.deepseek.com',
     note: '默认；deepseek-chat 支持文本，视觉能力取决于账号可用模型。',
   },
   {
@@ -138,3 +138,4 @@ export async function fetchModels(baseUrl: string, apiKey: string): Promise<Mode
     window.clearTimeout(timer)
   }
 }
+

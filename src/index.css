@@ -1,8 +1,40 @@
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('/fonts/HarmonyOS_Sans_SC_Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('/fonts/HarmonyOS_Sans_SC_Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('/fonts/HarmonyOS_Sans_SC_Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  src: url('/fonts/HarmonyOS_Sans_SC_Bold.woff2') format('woff2');
+  font-weight: 600 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* 墨辰 · same typographic and glass foundations as DarkCube. */
-  --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', SimSun, Georgia, serif;
-  --mono: 'SFMono-Regular', 'Cascadia Code', 'Cascadia Mono', Consolas, monospace;
+  --sans: 'HarmonyOS Sans SC', system-ui, sans-serif;
+  --serif: 'HarmonyOS Sans SC', system-ui, sans-serif;
+  --mono: 'HarmonyOS Sans SC', system-ui, sans-serif;
   --font-ui: var(--sans);
   --font-serif: var(--serif);
   --font-mono: var(--mono);
